@@ -478,6 +478,13 @@ function QuickScanView({ onAnalyse }) {
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [photoPreview, setPhotoPreview] = useState(null);
+  const fileInputRef = useRef(null);
+
+  const handlePhotoChange = (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (file) setPhotoPreview(URL.createObjectURL(file));
+  };
 
   const run = () => {
     const supplierPrice = parseFloat(price);
@@ -499,11 +506,20 @@ function QuickScanView({ onAnalyse }) {
       </div>
 
       <Card style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 12, padding: "30px 20px" }}>
-        <div style={{ width: 78, height: 78, borderRadius: 22, background: T.panel3, display: "flex", alignItems: "center", justifyContent: "center", border: `1.5px dashed ${T.line}` }}>
-          <Camera size={28} color={T.lime} />
+        <input ref={fileInputRef} type="file" accept="image/*" capture="environment" onChange={handlePhotoChange} style={{ display: "none" }} />
+        {photoPreview ? (
+          <img src={photoPreview} alt="Selected product" style={{ width: 96, height: 96, borderRadius: 22, objectFit: "cover", border: `1.5px solid ${T.lime}` }} />
+        ) : (
+          <div style={{ width: 78, height: 78, borderRadius: 22, background: T.panel3, display: "flex", alignItems: "center", justifyContent: "center", border: `1.5px dashed ${T.line}` }}>
+            <Camera size={28} color={T.lime} />
+          </div>
+        )}
+        <button onClick={() => fileInputRef.current?.click()} style={{ background: T.lime, color: "#0A0E17", border: "none", borderRadius: 12, padding: "11px 22px", fontWeight: 700, fontSize: 13.5, cursor: "pointer" }}>
+          {photoPreview ? "Retake photo" : "Take photo"}
+        </button>
+        <div style={{ fontSize: 11, color: T.faint, textAlign: "center" }}>
+          {photoPreview ? "Photo added — AI recognition isn't connected yet, so please also type the name below" : "or type the product name below"}
         </div>
-        <button style={{ background: T.lime, color: "#0A0E17", border: "none", borderRadius: 12, padding: "11px 22px", fontWeight: 700, fontSize: 13.5, cursor: "pointer" }}>Take photo</button>
-        <div style={{ fontSize: 11, color: T.faint }}>or type the product name below</div>
       </Card>
 
       <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Product name (optional if photo taken)" style={{ width: "100%", background: T.panel3, border: `1px solid ${T.line}`, borderRadius: 12, padding: "13px 14px", color: T.ink, fontSize: 14, boxSizing: "border-box" }} />
@@ -547,6 +563,13 @@ function ScanView({ onAnalyse }) {
   const [category, setCategory] = useState("Home & Kitchen");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [photoPreview, setPhotoPreview] = useState(null);
+  const fileInputRef = useRef(null);
+
+  const handlePhotoChange = (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (file) setPhotoPreview(URL.createObjectURL(file));
+  };
 
   const run = () => {
     const supplierPrice = parseFloat(price);
@@ -566,12 +589,19 @@ function ScanView({ onAnalyse }) {
       <Card>
         <SectionTitle icon={Camera} title="Identify your product" />
         <div style={{ border: `1.5px dashed ${T.line}`, borderRadius: 16, padding: "40px 20px", display: "flex", flexDirection: "column", alignItems: "center", gap: 10, background: T.panel3, marginBottom: 20 }}>
-          <div style={{ width: 52, height: 52, borderRadius: 14, background: T.panel, display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <Upload size={22} color={T.lime} />
-          </div>
-          <div style={{ fontSize: 13.5, color: T.ink, fontWeight: 500 }}>Drop a product photo, or take one</div>
-          <div style={{ fontSize: 11.5, color: T.faint }}>JPG, PNG — image identification is not wired up in this preview</div>
-          <button style={{ marginTop: 4, background: T.panel, border: `1px solid ${T.line}`, color: T.ink, borderRadius: 10, padding: "8px 14px", fontSize: 12.5, cursor: "pointer" }}>Choose photo</button>
+          <input ref={fileInputRef} type="file" accept="image/*" onChange={handlePhotoChange} style={{ display: "none" }} />
+          {photoPreview ? (
+            <img src={photoPreview} alt="Selected product" style={{ width: 88, height: 88, borderRadius: 14, objectFit: "cover", border: `1.5px solid ${T.lime}` }} />
+          ) : (
+            <div style={{ width: 52, height: 52, borderRadius: 14, background: T.panel, display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <Upload size={22} color={T.lime} />
+            </div>
+          )}
+          <div style={{ fontSize: 13.5, color: T.ink, fontWeight: 500 }}>{photoPreview ? "Photo added" : "Drop a product photo, or take one"}</div>
+          <div style={{ fontSize: 11.5, color: T.faint, textAlign: "center" }}>{photoPreview ? "AI recognition isn't connected yet — please still fill in the name below" : "JPG, PNG — image identification is not wired up in this preview"}</div>
+          <button onClick={() => fileInputRef.current?.click()} style={{ marginTop: 4, background: T.panel, border: `1px solid ${T.line}`, color: T.ink, borderRadius: 10, padding: "8px 14px", fontSize: 12.5, cursor: "pointer" }}>
+            {photoPreview ? "Choose a different photo" : "Choose photo"}
+          </button>
         </div>
 
         <div style={{ fontSize: 11.5, color: T.faint, marginBottom: 18 }}>— or skip the photo and type it in —</div>
