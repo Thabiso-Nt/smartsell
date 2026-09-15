@@ -446,15 +446,15 @@ function Dashboard({ setView, isMobile }) {
         <SectionTitle icon={LayoutGrid} title="Recent analyses" tag={<button onClick={() => setView("research")} style={{ background: "none", border: "none", color: T.blue, fontSize: 12.5, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>View all <ChevronRight size={13} /></button>} />
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           {RECENT.map((r) => (
-            <div key={r.name} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 14px", background: T.panel3, borderRadius: 13 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-                <div style={{ width: 38, height: 38, borderRadius: 10, background: T.panel, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 17 }}>📦</div>
-                <div>
+            <div key={r.name} style={{ display: "flex", flexDirection: isMobile ? "column" : "row", alignItems: isMobile ? "flex-start" : "center", gap: isMobile ? 10 : 0, justifyContent: "space-between", padding: "12px 14px", background: T.panel3, borderRadius: 13 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
+                <div style={{ width: 38, height: 38, borderRadius: 10, background: T.panel, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 17, flexShrink: 0 }}>📦</div>
+                <div style={{ minWidth: 0 }}>
                   <div style={{ fontSize: 13.5, color: T.ink, fontWeight: 500 }}>{r.name}</div>
                   <div style={{ fontSize: 11.5, color: T.faint, marginTop: 2 }}>Recommended: {r.price}</div>
                 </div>
               </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 16, alignSelf: isMobile ? "flex-end" : "center" }}>
                 <div style={{ fontSize: 13, color: T.sub, fontWeight: 600 }}>{r.score}/100</div>
                 <DecisionBadge decision={r.decision} />
               </div>
@@ -1285,23 +1285,23 @@ ${JSON.stringify(context, null, 2)}`;
 /* ============================================================================
    WATCHLIST / PLACEHOLDER (unchanged)
    ============================================================================ */
-function WatchlistView() {
+function WatchlistView({ isMobile }) {
   return (
-    <div style={{ padding: 28 }}>
+    <div style={{ padding: isMobile ? 16 : 28 }}>
       <Card>
         <SectionTitle icon={Bookmark} title="Watchlist" />
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           {WATCHLIST.map((w) => (
-            <div key={w.name} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "13px 14px", background: T.panel3, borderRadius: 13 }}>
-              <div>
+            <div key={w.name} style={{ display: "flex", flexDirection: isMobile ? "column" : "row", alignItems: isMobile ? "flex-start" : "center", gap: isMobile ? 6 : 0, justifyContent: "space-between", padding: "13px 14px", background: T.panel3, borderRadius: 13 }}>
+              <div style={{ minWidth: 0 }}>
                 <div style={{ fontSize: 13.5, color: T.ink, fontWeight: 500 }}>{w.name}</div>
                 {w.alert ? (
-                  <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 5 }}>
+                  <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 6, marginTop: 5 }}>
                     <Bell size={12} color={T.amber} /><span style={{ fontSize: 11.5, color: T.amber }}>{w.alert}</span><span style={{ fontSize: 11, color: T.faint }}>· {w.time}</span>
                   </div>
                 ) : <div style={{ fontSize: 11.5, color: T.faint, marginTop: 5 }}>No changes detected</div>}
               </div>
-              <div style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>{w.score}/100</div>
+              <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, alignSelf: isMobile ? "flex-end" : "center" }}>{w.score}/100</div>
             </div>
           ))}
         </div>
@@ -1354,7 +1354,7 @@ export default function SmartSellApp() {
   else if (view === "simulator") content = <SimulatorView seed={simSeed} isMobile={isMobile} />;
   else if (view === "research") content = <ComparisonView savedAnalyses={savedAnalyses} isMobile={isMobile} />;
   else if (view === "assistant") content = <AssistantView savedAnalyses={savedAnalyses} currentAnalysis={analysis} isMobile={isMobile} />;
-  else if (view === "watchlist") content = <WatchlistView />;
+  else if (view === "watchlist") content = <WatchlistView isMobile={isMobile} />;
   else content = <Placeholder label={TITLES[view]} />;
 
   if (isMobile) {
