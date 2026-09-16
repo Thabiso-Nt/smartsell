@@ -1372,8 +1372,65 @@ const TITLES = { dashboard: "Overview", scan: "Scan Product", analysis: "Product
    AUTH GATE — real login/signup with Supabase, same visual style.
    Renders the children (the actual app) once a user is signed in.
    ============================================================================ */
-function AuthScreen({ onSignedIn }) {
-  const [mode, setMode] = useState("login"); // 'login' | 'signup' | 'forgot'
+/* ============================================================================
+   LANDING PAGE — shown before login, explains what SmartSell does.
+   ============================================================================ */
+function LandingPage({ onGetStarted, onLogin }) {
+  const features = [
+    { icon: Camera, title: "Scan any product", desc: "Type a product name and supplier price — or snap a photo — to start." },
+    { icon: Package, title: "True cost engine", desc: "Shipping, duty, marketplace fees, returns — every real cost, not just supplier price." },
+    { icon: ShieldCheck, title: "Safety Factor", desc: "A dynamic risk score built from cost confidence, competition, and return risk." },
+    { icon: TrendingUp, title: "Opportunity Score", desc: "One transparent 0–100 score combining profit, risk, competition, and demand." },
+  ];
+
+  return (
+    <div style={{ minHeight: "100vh", background: T.bg, fontFamily: "'Inter', sans-serif", color: T.ink }}>
+      <style>{fontImport}</style>
+
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "22px 24px", maxWidth: 1000, margin: "0 auto" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{ width: 30, height: 30, borderRadius: 9, background: T.lime, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <Sparkles size={16} color="#0A0E17" />
+          </div>
+          <span style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: 18 }}>SmartSell</span>
+        </div>
+        <button onClick={onLogin} style={{ background: "none", border: `1px solid ${T.line}`, color: T.ink, borderRadius: 10, padding: "8px 16px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+          Log in
+        </button>
+      </div>
+
+      <div style={{ maxWidth: 720, margin: "0 auto", padding: "50px 24px 30px", textAlign: "center" }}>
+        <h1 style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: "clamp(28px, 5vw, 44px)", fontWeight: 700, lineHeight: 1.15, margin: "0 0 18px" }}>
+          Take a photo.<br />Know whether it's worth selling.
+        </h1>
+        <p style={{ fontSize: 15, color: T.sub, lineHeight: 1.6, maxWidth: 520, margin: "0 auto 30px" }}>
+          SmartSell researches the product, works out the real landed cost, and tells you the price, profit, and risk — before you spend a cent with a supplier.
+        </p>
+        <div style={{ display: "flex", gap: 12, justifyContent: "center", flexWrap: "wrap" }}>
+          <button onClick={onGetStarted} style={{ background: T.lime, color: "#0A0E17", border: "none", borderRadius: 12, padding: "13px 26px", fontWeight: 700, fontSize: 14.5, cursor: "pointer" }}>
+            Get started free
+          </button>
+          <button onClick={onLogin} style={{ background: "none", color: T.ink, border: `1px solid ${T.line}`, borderRadius: 12, padding: "13px 26px", fontWeight: 600, fontSize: 14.5, cursor: "pointer" }}>
+            Log in
+          </button>
+        </div>
+      </div>
+
+      <div style={{ maxWidth: 900, margin: "0 auto", padding: "10px 24px 70px", display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: 16 }}>
+        {features.map((f) => (
+          <Card key={f.title}>
+            <f.icon size={20} color={T.lime} style={{ marginBottom: 12 }} />
+            <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 6 }}>{f.title}</div>
+            <div style={{ fontSize: 12.5, color: T.sub, lineHeight: 1.55 }}>{f.desc}</div>
+          </Card>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function AuthScreen({ onSignedIn, initialMode = "login", onBackToLanding }) {
+  const [mode, setMode] = useState(initialMode); // 'login' | 'signup' | 'forgot'
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
@@ -1426,6 +1483,11 @@ function AuthScreen({ onSignedIn }) {
     <div style={{ minHeight: "100vh", background: T.bg, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Inter', sans-serif", padding: 20 }}>
       <style>{fontImport}</style>
       <Card style={{ width: "100%", maxWidth: 380 }}>
+        {onBackToLanding && (
+          <button onClick={onBackToLanding} style={{ background: "none", border: "none", color: T.faint, fontSize: 12, cursor: "pointer", padding: 0, marginBottom: 14, display: "flex", alignItems: "center", gap: 5 }}>
+            <ArrowLeft size={13} /> Back
+          </button>
+        )}
         <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 22, justifyContent: "center" }}>
           <div style={{ width: 32, height: 32, borderRadius: 9, background: T.lime, display: "flex", alignItems: "center", justifyContent: "center" }}>
             <Sparkles size={17} color="#0A0E17" />
@@ -1519,6 +1581,8 @@ function SetNewPasswordScreen({ onDone }) {
 function AuthGate({ children }) {
   const [session, setSession] = useState(undefined); // undefined = loading, null = signed out
   const [recovery, setRecovery] = useState(false);
+  const [screen, setScreen] = useState("landing"); // 'landing' | 'auth'
+  const [authMode, setAuthMode] = useState("login");
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSession(data.session));
@@ -1541,7 +1605,15 @@ function AuthGate({ children }) {
     return <SetNewPasswordScreen onDone={() => setRecovery(false)} />;
   }
   if (!session) {
-    return <AuthScreen onSignedIn={setSession} />;
+    if (screen === "landing") {
+      return (
+        <LandingPage
+          onGetStarted={() => { setAuthMode("signup"); setScreen("auth"); }}
+          onLogin={() => { setAuthMode("login"); setScreen("auth"); }}
+        />
+      );
+    }
+    return <AuthScreen onSignedIn={setSession} initialMode={authMode} onBackToLanding={() => setScreen("landing")} />;
   }
   return children(session.user);
 }
