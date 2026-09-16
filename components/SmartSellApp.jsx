@@ -5,7 +5,7 @@ import {
   LayoutGrid, ScanLine, Search, Store, Bookmark, LineChart, Bot, Settings,
   Camera, Upload, ArrowLeft, ArrowRight, ExternalLink,
   TrendingUp, ShieldCheck, AlertTriangle, CheckCircle2,
-  XCircle, Package, Info, Sparkles, Bell, ChevronRight, Home, User, Send
+  XCircle, Package, Info, Sparkles, Bell, ChevronRight, Home, User, Send, Trash2
 } from "lucide-react";
 
 /* ============================================================================
@@ -256,30 +256,11 @@ const NAV = [
   { id: "assistant", label: "AI Assistant", icon: Bot },
   { id: "settings", label: "Settings", icon: Settings },
 ];
-const STATS = [
-  { label: "Products analysed", value: "128", delta: "+12 this week" },
-  { label: "Good opportunities", value: "34", tone: T.lime },
-  { label: "Caution", value: "19", tone: T.amber },
-  { label: "Avoid", value: "11", tone: T.coral },
-  { label: "Avg. opportunity score", value: "71/100" },
-  { label: "Potential profit tracked", value: "R48,230" },
-];
-const RECENT = [
-  { name: "Insulated Steel Water Bottle 750ml", score: 87, decision: "good", price: "R479" },
-  { name: "Bluetooth Neck Fan", score: 54, decision: "caution", price: "R329" },
-  { name: "Ceramic Knife Set (5pc)", score: 29, decision: "avoid", price: "R249" },
-  { name: "Foldable Laptop Stand — Aluminium", score: 79, decision: "good", price: "R389" },
-];
 const SOURCE_META = {
   verified: { label: "Verified", color: T.lime },
   user: { label: "User entered", color: T.blue },
   estimated: { label: "Estimated", color: T.amber },
 };
-const WATCHLIST = [
-  { name: "Insulated Steel Water Bottle 750ml", score: 87, alert: "Competitor dropped price to R459", time: "3h ago" },
-  { name: "Foldable Laptop Stand — Aluminium", score: 79, alert: "2 new competing listings found", time: "1d ago" },
-  { name: "Bluetooth Neck Fan", score: 54, alert: null, time: null },
-];
 
 /* ============================================================================
    UI PRIMITIVES (unchanged)
@@ -431,37 +412,61 @@ function MobileBottomNav({ view, setView }) {
 /* ============================================================================
    DASHBOARD
    ============================================================================ */
-function Dashboard({ setView, isMobile }) {
+function Dashboard({ setView, savedAnalyses, isMobile }) {
+  const total = savedAnalyses.length;
+  const good = savedAnalyses.filter((a) => a.opportunity.decision === "good").length;
+  const caution = savedAnalyses.filter((a) => a.opportunity.decision === "caution").length;
+  const avoid = savedAnalyses.filter((a) => a.opportunity.decision === "avoid").length;
+  const avgScore = total ? Math.round(savedAnalyses.reduce((sum, a) => sum + a.opportunity.score, 0) / total) : null;
+  const potentialProfit = savedAnalyses.reduce((sum, a) => sum + Math.max(a.profitAnalysis.profit, 0), 0);
+
+  const stats = [
+    { label: "Products saved", value: total },
+    { label: "Good opportunities", value: good, tone: T.lime },
+    { label: "Caution", value: caution, tone: T.amber },
+    { label: "Avoid", value: avoid, tone: T.coral },
+    { label: "Avg. opportunity score", value: avgScore !== null ? `${avgScore}/100` : "—" },
+    { label: "Potential profit tracked", value: total ? fmtR(potentialProfit) : "R0" },
+  ];
+
+  const recent = [...savedAnalyses].slice(-4).reverse();
+
   return (
     <div style={{ padding: isMobile ? 16 : 28, display: "flex", flexDirection: "column", gap: isMobile ? 16 : 22 }}>
       <div style={{ display: "grid", gridTemplateColumns: isMobile ? "repeat(2, 1fr)" : "repeat(3, 1fr)", gap: isMobile ? 10 : 16 }}>
-        {STATS.map((s) => (
+        {stats.map((s) => (
           <Card key={s.label}>
             <div style={{ fontSize: 12.5, color: T.sub, marginBottom: 10 }}>{s.label}</div>
             <div style={{ fontFamily: "'Space Grotesk', sans-serif", fontSize: 28, fontWeight: 700, color: s.tone || T.ink }}>{s.value}</div>
-            {s.delta && <div style={{ fontSize: 11.5, color: T.faint, marginTop: 6 }}>{s.delta}</div>}
           </Card>
         ))}
       </div>
       <Card>
         <SectionTitle icon={LayoutGrid} title="Recent analyses" tag={<button onClick={() => setView("research")} style={{ background: "none", border: "none", color: T.blue, fontSize: 12.5, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>View all <ChevronRight size={13} /></button>} />
-        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          {RECENT.map((r) => (
-            <div key={r.name} style={{ display: "flex", flexDirection: isMobile ? "column" : "row", alignItems: isMobile ? "flex-start" : "center", gap: isMobile ? 10 : 0, justifyContent: "space-between", padding: "12px 14px", background: T.panel3, borderRadius: 13 }}>
-              <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
-                <div style={{ width: 38, height: 38, borderRadius: 10, background: T.panel, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 17, flexShrink: 0 }}>📦</div>
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: 13.5, color: T.ink, fontWeight: 500 }}>{r.name}</div>
-                  <div style={{ fontSize: 11.5, color: T.faint, marginTop: 2 }}>Recommended: {r.price}</div>
+        {recent.length === 0 ? (
+          <div style={{ textAlign: "center", padding: "30px 10px" }}>
+            <div style={{ fontSize: 13, color: T.sub, marginBottom: 4 }}>No products analysed yet</div>
+            <div style={{ fontSize: 11.5, color: T.faint }}>Scan your first product to see it show up here.</div>
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {recent.map((a) => (
+              <div key={a.id} style={{ display: "flex", flexDirection: isMobile ? "column" : "row", alignItems: isMobile ? "flex-start" : "center", gap: isMobile ? 10 : 0, justifyContent: "space-between", padding: "12px 14px", background: T.panel3, borderRadius: 13 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 12, minWidth: 0 }}>
+                  <div style={{ width: 38, height: 38, borderRadius: 10, background: T.panel, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 17, flexShrink: 0 }}>📦</div>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: 13.5, color: T.ink, fontWeight: 500 }}>{a.productName}</div>
+                    <div style={{ fontSize: 11.5, color: T.faint, marginTop: 2 }}>Recommended: {fmtR(a.profitAnalysis.sellingPrice)}</div>
+                  </div>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 16, alignSelf: isMobile ? "flex-end" : "center" }}>
+                  <div style={{ fontSize: 13, color: T.sub, fontWeight: 600 }}>{a.opportunity.score}/100</div>
+                  <DecisionBadge decision={a.opportunity.decision} />
                 </div>
               </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 16, alignSelf: isMobile ? "flex-end" : "center" }}>
-                <div style={{ fontSize: 13, color: T.sub, fontWeight: 600 }}>{r.score}/100</div>
-                <DecisionBadge decision={r.decision} />
-              </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </Card>
     </div>
   );
@@ -1284,25 +1289,46 @@ ${JSON.stringify(context, null, 2)}`;
 }
 
 /* ============================================================================
-   WATCHLIST / PLACEHOLDER (unchanged)
+   WATCHLIST / ACCOUNT / PLACEHOLDER
    ============================================================================ */
-function WatchlistView({ isMobile }) {
+function WatchlistView({ savedAnalyses, onRemove, isMobile }) {
+  if (savedAnalyses.length === 0) {
+    return (
+      <div style={{ padding: isMobile ? 16 : 28 }}>
+        <Card style={{ textAlign: "center", padding: 50 }}>
+          <Bookmark size={22} color={T.lime} style={{ marginBottom: 12 }} />
+          <div style={{ fontSize: 14, color: T.ink, fontWeight: 600, marginBottom: 6 }}>Nothing saved yet</div>
+          <div style={{ fontSize: 12.5, color: T.faint, maxWidth: 360, margin: "0 auto" }}>
+            Scan a product, then hit "Save to Compare" on its analysis page — it'll show up here too.
+          </div>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div style={{ padding: isMobile ? 16 : 28 }}>
       <Card>
         <SectionTitle icon={Bookmark} title="Watchlist" />
+        <div style={{ fontSize: 11, color: T.faint, marginBottom: 12 }}>
+          Automatic price/competition monitoring isn't connected yet — these are your saved products as they looked when analysed.
+        </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-          {WATCHLIST.map((w) => (
-            <div key={w.name} style={{ display: "flex", flexDirection: isMobile ? "column" : "row", alignItems: isMobile ? "flex-start" : "center", gap: isMobile ? 6 : 0, justifyContent: "space-between", padding: "13px 14px", background: T.panel3, borderRadius: 13 }}>
+          {savedAnalyses.map((a) => (
+            <div key={a.id} style={{ display: "flex", flexDirection: isMobile ? "column" : "row", alignItems: isMobile ? "flex-start" : "center", gap: isMobile ? 8 : 0, justifyContent: "space-between", padding: "13px 14px", background: T.panel3, borderRadius: 13 }}>
               <div style={{ minWidth: 0 }}>
-                <div style={{ fontSize: 13.5, color: T.ink, fontWeight: 500 }}>{w.name}</div>
-                {w.alert ? (
-                  <div style={{ display: "flex", alignItems: "center", flexWrap: "wrap", gap: 6, marginTop: 5 }}>
-                    <Bell size={12} color={T.amber} /><span style={{ fontSize: 11.5, color: T.amber }}>{w.alert}</span><span style={{ fontSize: 11, color: T.faint }}>· {w.time}</span>
-                  </div>
-                ) : <div style={{ fontSize: 11.5, color: T.faint, marginTop: 5 }}>No changes detected</div>}
+                <div style={{ fontSize: 13.5, color: T.ink, fontWeight: 500 }}>{a.productName}</div>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 5 }}>
+                  <span style={{ fontSize: 11.5, color: T.faint }}>Recommended: {fmtR(a.profitAnalysis.sellingPrice)}</span>
+                  <DecisionBadge decision={a.opportunity.decision} />
+                </div>
               </div>
-              <div style={{ fontSize: 13, fontWeight: 700, color: T.ink, alignSelf: isMobile ? "flex-end" : "center" }}>{w.score}/100</div>
+              <div style={{ display: "flex", alignItems: "center", gap: 14, alignSelf: isMobile ? "flex-end" : "center" }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>{a.opportunity.score}/100</div>
+                <button onClick={() => onRemove(a.id)} style={{ background: "none", border: "none", cursor: "pointer", padding: 4, display: "flex" }} title="Remove from Watchlist">
+                  <Trash2 size={15} color={T.faint} />
+                </button>
+              </div>
             </div>
           ))}
         </div>
@@ -1347,7 +1373,7 @@ const TITLES = { dashboard: "Overview", scan: "Scan Product", analysis: "Product
    Renders the children (the actual app) once a user is signed in.
    ============================================================================ */
 function AuthScreen({ onSignedIn }) {
-  const [mode, setMode] = useState("login"); // 'login' | 'signup'
+  const [mode, setMode] = useState("login"); // 'login' | 'signup' | 'forgot'
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
@@ -1355,6 +1381,23 @@ function AuthScreen({ onSignedIn }) {
   const [message, setMessage] = useState("");
 
   const submit = async () => {
+    if (mode === "forgot") {
+      if (!email.trim()) { setError("Enter the email you signed up with."); return; }
+      setError(""); setMessage(""); setBusy(true);
+      try {
+        const { error: err } = await supabase.auth.resetPasswordForEmail(email.trim(), {
+          redirectTo: typeof window !== "undefined" ? window.location.origin : undefined,
+        });
+        if (err) throw err;
+        setMessage("If that email has an account, a reset link has been sent — check your inbox.");
+      } catch (e) {
+        setError(e.message || "Something went wrong. Please try again.");
+      } finally {
+        setBusy(false);
+      }
+      return;
+    }
+
     if (!email.trim() || !password) { setError("Please enter both an email and a password."); return; }
     setError(""); setMessage(""); setBusy(true);
     try {
@@ -1390,19 +1433,42 @@ function AuthScreen({ onSignedIn }) {
           <span style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: 19, color: T.ink }}>SmartSell</span>
         </div>
 
-        <div style={{ display: "flex", background: T.panel3, borderRadius: 11, padding: 3, marginBottom: 20 }}>
-          {["login", "signup"].map((m) => (
-            <button key={m} onClick={() => { setMode(m); setError(""); setMessage(""); }} style={{ flex: 1, padding: "8px", borderRadius: 9, border: "none", cursor: "pointer", fontSize: 12.5, fontWeight: 600, background: mode === m ? T.lime : "transparent", color: mode === m ? "#0A0E17" : T.sub }}>
-              {m === "login" ? "Log in" : "Sign up"}
-            </button>
-          ))}
-        </div>
+        {mode !== "forgot" && (
+          <div style={{ display: "flex", background: T.panel3, borderRadius: 11, padding: 3, marginBottom: 20 }}>
+            {["login", "signup"].map((m) => (
+              <button key={m} onClick={() => { setMode(m); setError(""); setMessage(""); }} style={{ flex: 1, padding: "8px", borderRadius: 9, border: "none", cursor: "pointer", fontSize: 12.5, fontWeight: 600, background: mode === m ? T.lime : "transparent", color: mode === m ? "#0A0E17" : T.sub }}>
+                {m === "login" ? "Log in" : "Sign up"}
+              </button>
+            ))}
+          </div>
+        )}
+        {mode === "forgot" && (
+          <div style={{ marginBottom: 18 }}>
+            <div style={{ fontSize: 14, fontWeight: 600, color: T.ink, marginBottom: 4 }}>Reset your password</div>
+            <div style={{ fontSize: 12, color: T.faint }}>We'll email you a link to set a new one.</div>
+          </div>
+        )}
 
         <label style={{ fontSize: 12, color: T.sub, display: "block", marginBottom: 6 }}>Email</label>
         <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} style={{ width: "100%", background: T.panel3, border: `1px solid ${T.line}`, borderRadius: 11, padding: "11px 14px", color: T.ink, fontSize: 13.5, marginBottom: 14, boxSizing: "border-box" }} />
 
-        <label style={{ fontSize: 12, color: T.sub, display: "block", marginBottom: 6 }}>Password</label>
-        <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") submit(); }} style={{ width: "100%", background: T.panel3, border: `1px solid ${T.line}`, borderRadius: 11, padding: "11px 14px", color: T.ink, fontSize: 13.5, marginBottom: 18, boxSizing: "border-box" }} />
+        {mode !== "forgot" && (
+          <>
+            <label style={{ fontSize: 12, color: T.sub, display: "block", marginBottom: 6 }}>Password</label>
+            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") submit(); }} style={{ width: "100%", background: T.panel3, border: `1px solid ${T.line}`, borderRadius: 11, padding: "11px 14px", color: T.ink, fontSize: 13.5, marginBottom: 8, boxSizing: "border-box" }} />
+          </>
+        )}
+
+        {mode === "login" && (
+          <button onClick={() => { setMode("forgot"); setError(""); setMessage(""); }} style={{ background: "none", border: "none", color: T.blue, fontSize: 11.5, cursor: "pointer", padding: 0, marginBottom: 14, display: "block" }}>
+            Forgot password?
+          </button>
+        )}
+        {mode === "forgot" && (
+          <button onClick={() => { setMode("login"); setError(""); setMessage(""); }} style={{ background: "none", border: "none", color: T.blue, fontSize: 11.5, cursor: "pointer", padding: 0, marginBottom: 14, display: "block" }}>
+            ← Back to log in
+          </button>
+        )}
 
         {error && (
           <div style={{ marginBottom: 14, padding: "10px 12px", background: "rgba(255,110,110,0.08)", border: `1px solid ${T.coral}44`, borderRadius: 10, color: T.coral, fontSize: 12.5 }}>{error}</div>
@@ -1412,7 +1478,37 @@ function AuthScreen({ onSignedIn }) {
         )}
 
         <button onClick={submit} disabled={busy} style={{ width: "100%", background: T.lime, color: "#0A0E17", border: "none", borderRadius: 12, padding: "13px", fontWeight: 700, fontSize: 14, cursor: "pointer", opacity: busy ? 0.7 : 1 }}>
-          {busy ? "Please wait…" : mode === "login" ? "Log in" : "Create account"}
+          {busy ? "Please wait…" : mode === "forgot" ? "Send reset link" : mode === "login" ? "Log in" : "Create account"}
+        </button>
+      </Card>
+    </div>
+  );
+}
+
+function SetNewPasswordScreen({ onDone }) {
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  const submit = async () => {
+    if (password.length < 6) { setError("Password must be at least 6 characters."); return; }
+    setError(""); setBusy(true);
+    const { error: err } = await supabase.auth.updateUser({ password });
+    setBusy(false);
+    if (err) { setError(err.message); return; }
+    onDone();
+  };
+
+  return (
+    <div style={{ minHeight: "100vh", background: T.bg, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Inter', sans-serif", padding: 20 }}>
+      <style>{fontImport}</style>
+      <Card style={{ width: "100%", maxWidth: 380 }}>
+        <div style={{ fontSize: 15, fontWeight: 600, color: T.ink, marginBottom: 4 }}>Set a new password</div>
+        <div style={{ fontSize: 12, color: T.faint, marginBottom: 18 }}>Choose a new password for your account.</div>
+        <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") submit(); }} placeholder="New password" style={{ width: "100%", background: T.panel3, border: `1px solid ${T.line}`, borderRadius: 11, padding: "11px 14px", color: T.ink, fontSize: 13.5, marginBottom: 14, boxSizing: "border-box" }} />
+        {error && <div style={{ marginBottom: 14, padding: "10px 12px", background: "rgba(255,110,110,0.08)", border: `1px solid ${T.coral}44`, borderRadius: 10, color: T.coral, fontSize: 12.5 }}>{error}</div>}
+        <button onClick={submit} disabled={busy} style={{ width: "100%", background: T.lime, color: "#0A0E17", border: "none", borderRadius: 12, padding: "13px", fontWeight: 700, fontSize: 14, cursor: "pointer", opacity: busy ? 0.7 : 1 }}>
+          {busy ? "Saving…" : "Save new password"}
         </button>
       </Card>
     </div>
@@ -1422,10 +1518,14 @@ function AuthScreen({ onSignedIn }) {
 /** Shows the AuthScreen until signed in, then renders the real app. */
 function AuthGate({ children }) {
   const [session, setSession] = useState(undefined); // undefined = loading, null = signed out
+  const [recovery, setRecovery] = useState(false);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSession(data.session));
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, newSession) => setSession(newSession));
+    const { data: listener } = supabase.auth.onAuthStateChange((event, newSession) => {
+      if (event === "PASSWORD_RECOVERY") setRecovery(true);
+      setSession(newSession);
+    });
     return () => listener.subscription.unsubscribe();
   }, []);
 
@@ -1436,6 +1536,9 @@ function AuthGate({ children }) {
         Loading…
       </div>
     );
+  }
+  if (recovery) {
+    return <SetNewPasswordScreen onDone={() => setRecovery(false)} />;
   }
   if (!session) {
     return <AuthScreen onSignedIn={setSession} />;
@@ -1476,6 +1579,16 @@ function SmartSellDashboardApp({ user, signOut }) {
       setSavedAnalyses((prev) => [...prev, { ...result, id: data.id }]);
     }
   };
+  const removeFromSaved = async (id) => {
+    setSavedAnalyses((prev) => prev.filter((a) => a.id !== id)); // optimistic
+    const { error } = await supabase.from("saved_products").delete().eq("id", id);
+    if (error) {
+      // put it back if the delete failed
+      supabase.from("saved_products").select("*").order("created_at", { ascending: true }).then(({ data }) => {
+        if (data) setSavedAnalyses(data.map((row) => ({ ...row.data, id: row.id })));
+      });
+    }
+  };
   const openSimulatorFromAnalysis = () => {
     setSimSeed({
       supplierPrice: analysis.supplierPrice,
@@ -1487,13 +1600,13 @@ function SmartSellDashboardApp({ user, signOut }) {
   };
 
   let content;
-  if (view === "dashboard") content = <Dashboard setView={setView} isMobile={isMobile} />;
+  if (view === "dashboard") content = <Dashboard setView={setView} savedAnalyses={savedAnalyses} isMobile={isMobile} />;
   else if (view === "scan") content = isMobile ? <QuickScanView onAnalyse={handleAnalyse} /> : <ScanView onAnalyse={handleAnalyse} />;
   else if (view === "analysis" && analysis) content = <AnalysisView data={analysis} onBack={() => setView("scan")} onOpenSimulator={openSimulatorFromAnalysis} onSaveToComparison={saveToComparison} isMobile={isMobile} />;
   else if (view === "simulator") content = <SimulatorView seed={simSeed} isMobile={isMobile} />;
   else if (view === "research") content = <ComparisonView savedAnalyses={savedAnalyses} isMobile={isMobile} />;
   else if (view === "assistant") content = <AssistantView savedAnalyses={savedAnalyses} currentAnalysis={analysis} isMobile={isMobile} />;
-  else if (view === "watchlist") content = <WatchlistView isMobile={isMobile} />;
+  else if (view === "watchlist") content = <WatchlistView savedAnalyses={savedAnalyses} onRemove={removeFromSaved} isMobile={isMobile} />;
   else if (view === "settings") content = <AccountView user={user} signOut={signOut} isMobile={isMobile} />;
   else content = <Placeholder label={TITLES[view]} />;
 
