@@ -1,5 +1,6 @@
 "use client";
 import React, { useState, useEffect, useRef } from "react";
+import { supabase } from "../lib/supabaseClient";
 import {
   LayoutGrid, ScanLine, Search, Store, Bookmark, LineChart, Bot, Settings,
   Camera, Upload, ArrowLeft, ArrowRight, ExternalLink,
@@ -1309,6 +1310,21 @@ function WatchlistView({ isMobile }) {
     </div>
   );
 }
+function AccountView({ user, signOut, isMobile }) {
+  return (
+    <div style={{ padding: isMobile ? 16 : 28 }}>
+      <Card style={{ maxWidth: 420 }}>
+        <SectionTitle icon={User} title="Account" />
+        <div style={{ fontSize: 12, color: T.sub, marginBottom: 4 }}>Signed in as</div>
+        <div style={{ fontSize: 14, color: T.ink, fontWeight: 600, marginBottom: 20 }}>{user.email}</div>
+        <button onClick={signOut} style={{ background: T.panel3, border: `1px solid ${T.line}`, color: T.coral, fontSize: 13, fontWeight: 600, cursor: "pointer", padding: "10px 16px", borderRadius: 10 }}>
+          Log out
+        </button>
+      </Card>
+    </div>
+  );
+}
+
 function Placeholder({ label }) {
   return (
     <div style={{ padding: 28 }}>
@@ -1326,16 +1342,139 @@ function Placeholder({ label }) {
    ============================================================================ */
 const TITLES = { dashboard: "Overview", scan: "Scan Product", analysis: "Product Analysis", research: "Product Research", marketplace: "Marketplace Analysis", watchlist: "Watchlist", simulator: "Profit Simulator", assistant: "AI Assistant", settings: "Settings" };
 
-export default function SmartSellApp() {
+/* ============================================================================
+   AUTH GATE — real login/signup with Supabase, same visual style.
+   Renders the children (the actual app) once a user is signed in.
+   ============================================================================ */
+function AuthScreen({ onSignedIn }) {
+  const [mode, setMode] = useState("login"); // 'login' | 'signup'
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
+
+  const submit = async () => {
+    if (!email.trim() || !password) { setError("Please enter both an email and a password."); return; }
+    setError(""); setMessage(""); setBusy(true);
+    try {
+      if (mode === "login") {
+        const { data, error: err } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
+        if (err) throw err;
+        onSignedIn(data.session);
+      } else {
+        const { data, error: err } = await supabase.auth.signUp({ email: email.trim(), password });
+        if (err) throw err;
+        if (data.session) {
+          onSignedIn(data.session);
+        } else {
+          setMessage("Account created — check your email to confirm it, then log in.");
+          setMode("login");
+        }
+      }
+    } catch (e) {
+      setError(e.message || "Something went wrong. Please try again.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div style={{ minHeight: "100vh", background: T.bg, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Inter', sans-serif", padding: 20 }}>
+      <style>{fontImport}</style>
+      <Card style={{ width: "100%", maxWidth: 380 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 22, justifyContent: "center" }}>
+          <div style={{ width: 32, height: 32, borderRadius: 9, background: T.lime, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <Sparkles size={17} color="#0A0E17" />
+          </div>
+          <span style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: 19, color: T.ink }}>SmartSell</span>
+        </div>
+
+        <div style={{ display: "flex", background: T.panel3, borderRadius: 11, padding: 3, marginBottom: 20 }}>
+          {["login", "signup"].map((m) => (
+            <button key={m} onClick={() => { setMode(m); setError(""); setMessage(""); }} style={{ flex: 1, padding: "8px", borderRadius: 9, border: "none", cursor: "pointer", fontSize: 12.5, fontWeight: 600, background: mode === m ? T.lime : "transparent", color: mode === m ? "#0A0E17" : T.sub }}>
+              {m === "login" ? "Log in" : "Sign up"}
+            </button>
+          ))}
+        </div>
+
+        <label style={{ fontSize: 12, color: T.sub, display: "block", marginBottom: 6 }}>Email</label>
+        <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} style={{ width: "100%", background: T.panel3, border: `1px solid ${T.line}`, borderRadius: 11, padding: "11px 14px", color: T.ink, fontSize: 13.5, marginBottom: 14, boxSizing: "border-box" }} />
+
+        <label style={{ fontSize: 12, color: T.sub, display: "block", marginBottom: 6 }}>Password</label>
+        <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") submit(); }} style={{ width: "100%", background: T.panel3, border: `1px solid ${T.line}`, borderRadius: 11, padding: "11px 14px", color: T.ink, fontSize: 13.5, marginBottom: 18, boxSizing: "border-box" }} />
+
+        {error && (
+          <div style={{ marginBottom: 14, padding: "10px 12px", background: "rgba(255,110,110,0.08)", border: `1px solid ${T.coral}44`, borderRadius: 10, color: T.coral, fontSize: 12.5 }}>{error}</div>
+        )}
+        {message && (
+          <div style={{ marginBottom: 14, padding: "10px 12px", background: "rgba(198,255,61,0.08)", border: `1px solid ${T.lime}44`, borderRadius: 10, color: T.lime, fontSize: 12.5 }}>{message}</div>
+        )}
+
+        <button onClick={submit} disabled={busy} style={{ width: "100%", background: T.lime, color: "#0A0E17", border: "none", borderRadius: 12, padding: "13px", fontWeight: 700, fontSize: 14, cursor: "pointer", opacity: busy ? 0.7 : 1 }}>
+          {busy ? "Please wait…" : mode === "login" ? "Log in" : "Create account"}
+        </button>
+      </Card>
+    </div>
+  );
+}
+
+/** Shows the AuthScreen until signed in, then renders the real app. */
+function AuthGate({ children }) {
+  const [session, setSession] = useState(undefined); // undefined = loading, null = signed out
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => setSession(data.session));
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, newSession) => setSession(newSession));
+    return () => listener.subscription.unsubscribe();
+  }, []);
+
+  if (session === undefined) {
+    return (
+      <div style={{ minHeight: "100vh", background: T.bg, display: "flex", alignItems: "center", justifyContent: "center", color: T.faint, fontFamily: "'Inter', sans-serif" }}>
+        <style>{fontImport}</style>
+        Loading…
+      </div>
+    );
+  }
+  if (!session) {
+    return <AuthScreen onSignedIn={setSession} />;
+  }
+  return children(session.user);
+}
+
+function SmartSellDashboardApp({ user, signOut }) {
   const isMobile = useIsMobile();
   const [view, setView] = useState("dashboard");
   const [analysis, setAnalysis] = useState(null);
   const [simSeed, setSimSeed] = useState(null);
   const [savedAnalyses, setSavedAnalyses] = useState([]);
 
+  // Load this user's saved products from Supabase once, on sign-in.
+  useEffect(() => {
+    let ignore = false;
+    supabase
+      .from("saved_products")
+      .select("*")
+      .order("created_at", { ascending: true })
+      .then(({ data, error }) => {
+        if (!ignore && !error && data) {
+          setSavedAnalyses(data.map((row) => ({ ...row.data, id: row.id })));
+        }
+      });
+    return () => { ignore = true; };
+  }, [user.id]);
+
   const handleAnalyse = (result) => { setAnalysis(result); setView("analysis"); };
-  const saveToComparison = (result) => {
-    setSavedAnalyses((prev) => [...prev, { ...result, id: `${result.productName}-${Date.now()}` }]);
+  const saveToComparison = async (result) => {
+    const { data, error } = await supabase
+      .from("saved_products")
+      .insert({ user_id: user.id, product_name: result.productName, data: result })
+      .select()
+      .single();
+    if (!error && data) {
+      setSavedAnalyses((prev) => [...prev, { ...result, id: data.id }]);
+    }
   };
   const openSimulatorFromAnalysis = () => {
     setSimSeed({
@@ -1355,6 +1494,7 @@ export default function SmartSellApp() {
   else if (view === "research") content = <ComparisonView savedAnalyses={savedAnalyses} isMobile={isMobile} />;
   else if (view === "assistant") content = <AssistantView savedAnalyses={savedAnalyses} currentAnalysis={analysis} isMobile={isMobile} />;
   else if (view === "watchlist") content = <WatchlistView isMobile={isMobile} />;
+  else if (view === "settings") content = <AccountView user={user} signOut={signOut} isMobile={isMobile} />;
   else content = <Placeholder label={TITLES[view]} />;
 
   if (isMobile) {
@@ -1377,5 +1517,14 @@ export default function SmartSellApp() {
         <div style={{ flex: 1, overflowY: "auto" }}>{content}</div>
       </div>
     </div>
+  );
+}
+
+export default function SmartSellApp() {
+  const signOut = () => supabase.auth.signOut();
+  return (
+    <AuthGate>
+      {(user) => <SmartSellDashboardApp user={user} signOut={signOut} />}
+    </AuthGate>
   );
 }
