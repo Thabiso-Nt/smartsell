@@ -19,7 +19,20 @@ const T = {
 const fontImport = `@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=Inter:wght@400;500;600;700;800&display=swap');`;
 const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
 const round5 = (n) => Math.round(n / 5) * 5;
-const fmtR = (n) => `R${Math.round(n).toLocaleString()}`;
+const COUNTRY_CURRENCY = {
+  "South Africa": { code: "ZAR", symbol: "R" },
+  "United States": { code: "USD", symbol: "$" },
+  "United Kingdom": { code: "GBP", symbol: "£" },
+  "Nigeria": { code: "NGN", symbol: "₦" },
+  "Kenya": { code: "KES", symbol: "KSh " },
+  "Australia": { code: "AUD", symbol: "A$" },
+  "Canada": { code: "CAD", symbol: "C$" },
+  "Other": { code: "USD", symbol: "$" },
+};
+// Set once per render from the signed-in user's saved country (see
+// SmartSellDashboardApp). Defaults to Rand for anyone without one set yet.
+let CURRENCY_SYMBOL = "R";
+const fmtR = (n) => `${CURRENCY_SYMBOL}${Math.round(n).toLocaleString()}`;
 const fmtPct = (n) => `${n.toFixed(1)}%`;
 
 // Adaptive layout hook — mobile gets a genuinely different shell/flow, not a
@@ -1385,6 +1398,19 @@ function WatchlistView({ savedAnalyses, onRemove, onSaveNote, isMobile }) {
   );
 }
 function AccountView({ user, signOut, savedAnalyses, onClearAll, isMobile }) {
+  // ---- Region & currency ----
+  const [country, setCountry] = useState(user.user_metadata?.country || "South Africa");
+  const [regionBusy, setRegionBusy] = useState(false);
+  const [regionMessage, setRegionMessage] = useState("");
+
+  const saveRegion = async () => {
+    setRegionBusy(true); setRegionMessage("");
+    const currency = COUNTRY_CURRENCY[country] || COUNTRY_CURRENCY["Other"];
+    const { error } = await supabase.auth.updateUser({ data: { country, currency_code: currency.code, currency_symbol: currency.symbol } });
+    setRegionBusy(false);
+    if (!error) setRegionMessage(`Saved — prices now show in ${currency.code} (${currency.symbol})`);
+  };
+
   // ---- Change password ----
   const [newPassword, setNewPassword] = useState("");
   const [pwBusy, setPwBusy] = useState(false);
@@ -1439,6 +1465,18 @@ function AccountView({ user, signOut, savedAnalyses, onClearAll, isMobile }) {
         <div style={{ fontSize: 14, color: T.ink, fontWeight: 600, marginBottom: 20 }}>{user.email}</div>
         <button onClick={signOut} style={{ background: T.panel3, border: `1px solid ${T.line}`, color: T.coral, fontSize: 13, fontWeight: 600, cursor: "pointer", padding: "10px 16px", borderRadius: 10 }}>
           Log out
+        </button>
+      </Card>
+
+      <Card>
+        <SectionTitle icon={Store} title="Region & currency" />
+        <label style={{ fontSize: 12, color: T.sub, display: "block", marginBottom: 6 }}>Country</label>
+        <select value={country} onChange={(e) => setCountry(e.target.value)} style={{ width: "100%", background: T.panel3, border: `1px solid ${T.line}`, borderRadius: 11, padding: "10px 14px", color: T.ink, fontSize: 13, marginBottom: 12, boxSizing: "border-box" }}>
+          {Object.keys(COUNTRY_CURRENCY).map((c) => <option key={c}>{c}</option>)}
+        </select>
+        {regionMessage && <div style={{ marginBottom: 12, padding: "9px 12px", background: "rgba(198,255,61,0.08)", border: `1px solid ${T.lime}44`, borderRadius: 10, color: T.lime, fontSize: 12 }}>{regionMessage}</div>}
+        <button onClick={saveRegion} disabled={regionBusy} style={{ background: T.lime, color: "#0A0E17", border: "none", borderRadius: 10, padding: "9px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer", opacity: regionBusy ? 0.7 : 1 }}>
+          {regionBusy ? "Saving…" : "Save region"}
         </button>
       </Card>
 
@@ -1571,6 +1609,7 @@ function AuthScreen({ onSignedIn, initialMode = "login", onBackToLanding }) {
   const [mode, setMode] = useState(initialMode); // 'login' | 'signup' | 'forgot'
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [country, setCountry] = useState("South Africa");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [message, setMessage] = useState("");
@@ -1601,7 +1640,12 @@ function AuthScreen({ onSignedIn, initialMode = "login", onBackToLanding }) {
         if (err) throw err;
         onSignedIn(data.session);
       } else {
-        const { data, error: err } = await supabase.auth.signUp({ email: email.trim(), password });
+        const currency = COUNTRY_CURRENCY[country] || COUNTRY_CURRENCY["Other"];
+        const { data, error: err } = await supabase.auth.signUp({
+          email: email.trim(),
+          password,
+          options: { data: { country, currency_code: currency.code, currency_symbol: currency.symbol } },
+        });
         if (err) throw err;
         if (data.session) {
           onSignedIn(data.session);
@@ -1657,6 +1701,18 @@ function AuthScreen({ onSignedIn, initialMode = "login", onBackToLanding }) {
             <label style={{ fontSize: 12, color: T.sub, display: "block", marginBottom: 6 }}>Password</label>
             <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") submit(); }} style={{ width: "100%", background: T.panel3, border: `1px solid ${T.line}`, borderRadius: 11, padding: "11px 14px", color: T.ink, fontSize: 13.5, marginBottom: 8, boxSizing: "border-box" }} />
           </>
+        )}
+
+        {mode === "signup" && (
+          <div style={{ marginBottom: 8 }}>
+            <label style={{ fontSize: 12, color: T.sub, display: "block", marginBottom: 6 }}>Country</label>
+            <select value={country} onChange={(e) => setCountry(e.target.value)} style={{ width: "100%", background: T.panel3, border: `1px solid ${T.line}`, borderRadius: 11, padding: "11px 14px", color: T.ink, fontSize: 13.5, boxSizing: "border-box" }}>
+              {Object.keys(COUNTRY_CURRENCY).map((c) => <option key={c}>{c}</option>)}
+            </select>
+            <div style={{ fontSize: 11, color: T.faint, marginTop: 6 }}>
+              Prices will show in {COUNTRY_CURRENCY[country].code} ({COUNTRY_CURRENCY[country].symbol})
+            </div>
+          </div>
         )}
 
         {mode === "login" && (
@@ -1757,6 +1813,8 @@ function AuthGate({ children }) {
 }
 
 function SmartSellDashboardApp({ user, signOut }) {
+  // Every price formatted with fmtR() during this render uses this symbol.
+  CURRENCY_SYMBOL = user.user_metadata?.currency_symbol || "R";
   const isMobile = useIsMobile();
   const [view, setView] = useState("dashboard");
   const [analysis, setAnalysis] = useState(null);
