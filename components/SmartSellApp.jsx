@@ -1291,7 +1291,69 @@ ${JSON.stringify(context, null, 2)}`;
 /* ============================================================================
    WATCHLIST / ACCOUNT / PLACEHOLDER
    ============================================================================ */
-function WatchlistView({ savedAnalyses, onRemove, isMobile }) {
+function WatchlistItem({ a, onRemove, onSaveNote, isMobile }) {
+  const [editing, setEditing] = useState(false);
+  const [noteText, setNoteText] = useState(a.note || "");
+  const [saving, setSaving] = useState(false);
+
+  const save = async () => {
+    setSaving(true);
+    await onSaveNote(a.id, noteText);
+    setSaving(false);
+    setEditing(false);
+  };
+
+  return (
+    <div style={{ padding: "13px 14px", background: T.panel3, borderRadius: 13 }}>
+      <div style={{ display: "flex", flexDirection: isMobile ? "column" : "row", alignItems: isMobile ? "flex-start" : "center", gap: isMobile ? 8 : 0, justifyContent: "space-between" }}>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontSize: 13.5, color: T.ink, fontWeight: 500 }}>{a.productName}</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 5 }}>
+            <span style={{ fontSize: 11.5, color: T.faint }}>Recommended: {fmtR(a.profitAnalysis.sellingPrice)}</span>
+            <DecisionBadge decision={a.opportunity.decision} />
+          </div>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 14, alignSelf: isMobile ? "flex-end" : "center" }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>{a.opportunity.score}/100</div>
+          <button onClick={() => setEditing((e) => !e)} style={{ background: "none", border: "none", cursor: "pointer", padding: 4, display: "flex" }} title="Add/edit note">
+            <Info size={15} color={a.note ? T.blue : T.faint} />
+          </button>
+          <button onClick={() => onRemove(a.id)} style={{ background: "none", border: "none", cursor: "pointer", padding: 4, display: "flex" }} title="Remove from Watchlist">
+            <Trash2 size={15} color={T.faint} />
+          </button>
+        </div>
+      </div>
+
+      {!editing && a.note && (
+        <div onClick={() => setEditing(true)} style={{ marginTop: 10, padding: "8px 10px", background: T.panel, borderRadius: 9, fontSize: 12, color: T.sub, cursor: "pointer" }}>
+          {a.note}
+        </div>
+      )}
+
+      {editing && (
+        <div style={{ marginTop: 10 }}>
+          <textarea
+            value={noteText}
+            onChange={(e) => setNoteText(e.target.value)}
+            placeholder="e.g. Call supplier Thabo about MOQ…"
+            rows={2}
+            style={{ width: "100%", background: T.panel, border: `1px solid ${T.line}`, borderRadius: 9, padding: "8px 10px", color: T.ink, fontSize: 12.5, boxSizing: "border-box", fontFamily: "inherit", resize: "vertical" }}
+          />
+          <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+            <button onClick={save} disabled={saving} style={{ background: T.lime, color: "#0A0E17", border: "none", borderRadius: 8, padding: "6px 12px", fontSize: 11.5, fontWeight: 700, cursor: "pointer" }}>
+              {saving ? "Saving…" : "Save note"}
+            </button>
+            <button onClick={() => { setEditing(false); setNoteText(a.note || ""); }} style={{ background: "none", border: `1px solid ${T.line}`, color: T.sub, borderRadius: 8, padding: "6px 12px", fontSize: 11.5, cursor: "pointer" }}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function WatchlistView({ savedAnalyses, onRemove, onSaveNote, isMobile }) {
   if (savedAnalyses.length === 0) {
     return (
       <div style={{ padding: isMobile ? 16 : 28 }}>
@@ -1311,25 +1373,11 @@ function WatchlistView({ savedAnalyses, onRemove, isMobile }) {
       <Card>
         <SectionTitle icon={Bookmark} title="Watchlist" />
         <div style={{ fontSize: 11, color: T.faint, marginBottom: 12 }}>
-          Automatic price/competition monitoring isn't connected yet — these are your saved products as they looked when analysed.
+          Automatic price/competition monitoring isn't connected yet — these are your saved products as they looked when analysed. Tap the ⓘ icon to add a note.
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
           {savedAnalyses.map((a) => (
-            <div key={a.id} style={{ display: "flex", flexDirection: isMobile ? "column" : "row", alignItems: isMobile ? "flex-start" : "center", gap: isMobile ? 8 : 0, justifyContent: "space-between", padding: "13px 14px", background: T.panel3, borderRadius: 13 }}>
-              <div style={{ minWidth: 0 }}>
-                <div style={{ fontSize: 13.5, color: T.ink, fontWeight: 500 }}>{a.productName}</div>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 5 }}>
-                  <span style={{ fontSize: 11.5, color: T.faint }}>Recommended: {fmtR(a.profitAnalysis.sellingPrice)}</span>
-                  <DecisionBadge decision={a.opportunity.decision} />
-                </div>
-              </div>
-              <div style={{ display: "flex", alignItems: "center", gap: 14, alignSelf: isMobile ? "flex-end" : "center" }}>
-                <div style={{ fontSize: 13, fontWeight: 700, color: T.ink }}>{a.opportunity.score}/100</div>
-                <button onClick={() => onRemove(a.id)} style={{ background: "none", border: "none", cursor: "pointer", padding: 4, display: "flex" }} title="Remove from Watchlist">
-                  <Trash2 size={15} color={T.faint} />
-                </button>
-              </div>
-            </div>
+            <WatchlistItem key={a.id} a={a} onRemove={onRemove} onSaveNote={onSaveNote} isMobile={isMobile} />
           ))}
         </div>
       </Card>
@@ -1634,7 +1682,7 @@ function SmartSellDashboardApp({ user, signOut }) {
       .order("created_at", { ascending: true })
       .then(({ data, error }) => {
         if (!ignore && !error && data) {
-          setSavedAnalyses(data.map((row) => ({ ...row.data, id: row.id })));
+          setSavedAnalyses(data.map((row) => ({ ...row.data, id: row.id, note: row.notes })));
         }
       });
     return () => { ignore = true; };
@@ -1657,9 +1705,13 @@ function SmartSellDashboardApp({ user, signOut }) {
     if (error) {
       // put it back if the delete failed
       supabase.from("saved_products").select("*").order("created_at", { ascending: true }).then(({ data }) => {
-        if (data) setSavedAnalyses(data.map((row) => ({ ...row.data, id: row.id })));
+        if (data) setSavedAnalyses(data.map((row) => ({ ...row.data, id: row.id, note: row.notes })));
       });
     }
+  };
+  const saveNote = async (id, note) => {
+    setSavedAnalyses((prev) => prev.map((a) => (a.id === id ? { ...a, note } : a))); // optimistic
+    await supabase.from("saved_products").update({ notes: note }).eq("id", id);
   };
   const openSimulatorFromAnalysis = () => {
     setSimSeed({
@@ -1678,7 +1730,7 @@ function SmartSellDashboardApp({ user, signOut }) {
   else if (view === "simulator") content = <SimulatorView seed={simSeed} isMobile={isMobile} />;
   else if (view === "research") content = <ComparisonView savedAnalyses={savedAnalyses} isMobile={isMobile} />;
   else if (view === "assistant") content = <AssistantView savedAnalyses={savedAnalyses} currentAnalysis={analysis} isMobile={isMobile} />;
-  else if (view === "watchlist") content = <WatchlistView savedAnalyses={savedAnalyses} onRemove={removeFromSaved} isMobile={isMobile} />;
+  else if (view === "watchlist") content = <WatchlistView savedAnalyses={savedAnalyses} onRemove={removeFromSaved} onSaveNote={saveNote} isMobile={isMobile} />;
   else if (view === "settings") content = <AccountView user={user} signOut={signOut} isMobile={isMobile} />;
   else content = <Placeholder label={TITLES[view]} />;
 
