@@ -476,11 +476,11 @@ function Dashboard({ setView, savedAnalyses, isMobile }) {
    QUICK SCAN — mobile-only minimal flow: photo/name, price, Analyse.
    Deliberately not the full desktop form; advanced fields are tucked away.
    ============================================================================ */
-function QuickScanView({ onAnalyse }) {
+function QuickScanView({ onAnalyse, user }) {
   const [name, setName] = useState("");
   const [price, setPrice] = useState("");
-  const [marketplace, setMarketplace] = useState("Takealot");
-  const [category, setCategory] = useState("Home & Kitchen");
+  const [marketplace, setMarketplace] = useState(user?.user_metadata?.default_marketplace || "Takealot");
+  const [category, setCategory] = useState(user?.user_metadata?.default_category || "Home & Kitchen");
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -562,11 +562,11 @@ function QuickScanView({ onAnalyse }) {
 /* ============================================================================
    SCAN VIEW — now a real form feeding the engine
    ============================================================================ */
-function ScanView({ onAnalyse }) {
+function ScanView({ onAnalyse, user }) {
   const [name, setName] = useState("Insulated Steel Water Bottle 750ml");
   const [price, setPrice] = useState("200");
-  const [marketplace, setMarketplace] = useState("Takealot");
-  const [category, setCategory] = useState("Home & Kitchen");
+  const [marketplace, setMarketplace] = useState(user?.user_metadata?.default_marketplace || "Takealot");
+  const [category, setCategory] = useState(user?.user_metadata?.default_category || "Home & Kitchen");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [photoPreview, setPhotoPreview] = useState(null);
@@ -1384,16 +1384,106 @@ function WatchlistView({ savedAnalyses, onRemove, onSaveNote, isMobile }) {
     </div>
   );
 }
-function AccountView({ user, signOut, isMobile }) {
+function AccountView({ user, signOut, savedAnalyses, onClearAll, isMobile }) {
+  // ---- Change password ----
+  const [newPassword, setNewPassword] = useState("");
+  const [pwBusy, setPwBusy] = useState(false);
+  const [pwMessage, setPwMessage] = useState("");
+  const [pwError, setPwError] = useState("");
+
+  const changePassword = async () => {
+    if (newPassword.length < 6) { setPwError("Password must be at least 6 characters."); setPwMessage(""); return; }
+    setPwError(""); setPwMessage(""); setPwBusy(true);
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+    setPwBusy(false);
+    if (error) { setPwError(error.message); return; }
+    setPwMessage("Password updated.");
+    setNewPassword("");
+  };
+
+  // ---- Default preferences (stored on the user's own account, no extra table needed) ----
+  const [defaultMarketplace, setDefaultMarketplace] = useState(user.user_metadata?.default_marketplace || "Takealot");
+  const [defaultCategory, setDefaultCategory] = useState(user.user_metadata?.default_category || "Home & Kitchen");
+  const [prefBusy, setPrefBusy] = useState(false);
+  const [prefMessage, setPrefMessage] = useState("");
+
+  const savePreferences = async () => {
+    setPrefBusy(true); setPrefMessage("");
+    const { error } = await supabase.auth.updateUser({ data: { default_marketplace: defaultMarketplace, default_category: defaultCategory } });
+    setPrefBusy(false);
+    if (!error) setPrefMessage("Saved — Scan will use these by default from now on.");
+  };
+
+  // ---- Data controls ----
+  const exportData = () => {
+    const blob = new Blob([JSON.stringify(savedAnalyses, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "smartsell-saved-products.json";
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const clearAll = () => {
+    if (window.confirm(`Delete all ${savedAnalyses.length} saved products? This can't be undone.`)) {
+      onClearAll();
+    }
+  };
+
   return (
-    <div style={{ padding: isMobile ? 16 : 28 }}>
-      <Card style={{ maxWidth: 420 }}>
+    <div style={{ padding: isMobile ? 16 : 28, display: "flex", flexDirection: "column", gap: 16, maxWidth: 480 }}>
+      <Card>
         <SectionTitle icon={User} title="Account" />
         <div style={{ fontSize: 12, color: T.sub, marginBottom: 4 }}>Signed in as</div>
         <div style={{ fontSize: 14, color: T.ink, fontWeight: 600, marginBottom: 20 }}>{user.email}</div>
         <button onClick={signOut} style={{ background: T.panel3, border: `1px solid ${T.line}`, color: T.coral, fontSize: 13, fontWeight: 600, cursor: "pointer", padding: "10px 16px", borderRadius: 10 }}>
           Log out
         </button>
+      </Card>
+
+      <Card>
+        <SectionTitle icon={ShieldCheck} title="Change password" />
+        <input
+          type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)}
+          placeholder="New password"
+          style={{ width: "100%", background: T.panel3, border: `1px solid ${T.line}`, borderRadius: 11, padding: "11px 14px", color: T.ink, fontSize: 13.5, marginBottom: 12, boxSizing: "border-box" }}
+        />
+        {pwError && <div style={{ marginBottom: 12, padding: "9px 12px", background: "rgba(255,110,110,0.08)", border: `1px solid ${T.coral}44`, borderRadius: 10, color: T.coral, fontSize: 12 }}>{pwError}</div>}
+        {pwMessage && <div style={{ marginBottom: 12, padding: "9px 12px", background: "rgba(198,255,61,0.08)", border: `1px solid ${T.lime}44`, borderRadius: 10, color: T.lime, fontSize: 12 }}>{pwMessage}</div>}
+        <button onClick={changePassword} disabled={pwBusy} style={{ background: T.lime, color: "#0A0E17", border: "none", borderRadius: 10, padding: "9px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer", opacity: pwBusy ? 0.7 : 1 }}>
+          {pwBusy ? "Saving…" : "Update password"}
+        </button>
+      </Card>
+
+      <Card>
+        <SectionTitle icon={ScanLine} title="Scan defaults" />
+        <div style={{ fontSize: 11.5, color: T.faint, marginBottom: 14 }}>Used to pre-fill the Scan form so you don't have to pick these every time.</div>
+        <label style={{ fontSize: 12, color: T.sub, display: "block", marginBottom: 6 }}>Default marketplace</label>
+        <select value={defaultMarketplace} onChange={(e) => setDefaultMarketplace(e.target.value)} style={{ width: "100%", background: T.panel3, border: `1px solid ${T.line}`, borderRadius: 11, padding: "10px 14px", color: T.ink, fontSize: 13, marginBottom: 12, boxSizing: "border-box" }}>
+          {Object.keys(MARKETPLACE_CONFIG).map((m) => <option key={m}>{m}</option>)}
+        </select>
+        <label style={{ fontSize: 12, color: T.sub, display: "block", marginBottom: 6 }}>Default category</label>
+        <select value={defaultCategory} onChange={(e) => setDefaultCategory(e.target.value)} style={{ width: "100%", background: T.panel3, border: `1px solid ${T.line}`, borderRadius: 11, padding: "10px 14px", color: T.ink, fontSize: 13, marginBottom: 14, boxSizing: "border-box" }}>
+          {Object.keys(CATEGORY_PROFILES).map((c) => <option key={c}>{c}</option>)}
+        </select>
+        {prefMessage && <div style={{ marginBottom: 12, padding: "9px 12px", background: "rgba(198,255,61,0.08)", border: `1px solid ${T.lime}44`, borderRadius: 10, color: T.lime, fontSize: 12 }}>{prefMessage}</div>}
+        <button onClick={savePreferences} disabled={prefBusy} style={{ background: T.lime, color: "#0A0E17", border: "none", borderRadius: 10, padding: "9px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer", opacity: prefBusy ? 0.7 : 1 }}>
+          {prefBusy ? "Saving…" : "Save preferences"}
+        </button>
+      </Card>
+
+      <Card>
+        <SectionTitle icon={Package} title="Your data" />
+        <div style={{ fontSize: 11.5, color: T.faint, marginBottom: 14 }}>{savedAnalyses.length} product{savedAnalyses.length === 1 ? "" : "s"} currently saved.</div>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          <button onClick={exportData} disabled={savedAnalyses.length === 0} style={{ background: T.panel3, border: `1px solid ${T.line}`, color: T.ink, fontSize: 13, fontWeight: 600, cursor: savedAnalyses.length === 0 ? "default" : "pointer", padding: "9px 16px", borderRadius: 10, opacity: savedAnalyses.length === 0 ? 0.5 : 1 }}>
+            Export my data
+          </button>
+          <button onClick={clearAll} disabled={savedAnalyses.length === 0} style={{ background: "none", border: `1px solid ${T.coral}55`, color: T.coral, fontSize: 13, fontWeight: 600, cursor: savedAnalyses.length === 0 ? "default" : "pointer", padding: "9px 16px", borderRadius: 10, opacity: savedAnalyses.length === 0 ? 0.5 : 1 }}>
+            Clear all saved products
+          </button>
+        </div>
       </Card>
     </div>
   );
@@ -1713,6 +1803,11 @@ function SmartSellDashboardApp({ user, signOut }) {
     setSavedAnalyses((prev) => prev.map((a) => (a.id === id ? { ...a, note } : a))); // optimistic
     await supabase.from("saved_products").update({ notes: note }).eq("id", id);
   };
+  const clearAllSaved = async () => {
+    const ids = savedAnalyses.map((a) => a.id);
+    setSavedAnalyses([]); // optimistic
+    await supabase.from("saved_products").delete().in("id", ids);
+  };
   const openSimulatorFromAnalysis = () => {
     setSimSeed({
       supplierPrice: analysis.supplierPrice,
@@ -1725,13 +1820,13 @@ function SmartSellDashboardApp({ user, signOut }) {
 
   let content;
   if (view === "dashboard") content = <Dashboard setView={setView} savedAnalyses={savedAnalyses} isMobile={isMobile} />;
-  else if (view === "scan") content = isMobile ? <QuickScanView onAnalyse={handleAnalyse} /> : <ScanView onAnalyse={handleAnalyse} />;
+  else if (view === "scan") content = isMobile ? <QuickScanView onAnalyse={handleAnalyse} user={user} /> : <ScanView onAnalyse={handleAnalyse} user={user} />;
   else if (view === "analysis" && analysis) content = <AnalysisView data={analysis} onBack={() => setView("scan")} onOpenSimulator={openSimulatorFromAnalysis} onSaveToComparison={saveToComparison} isMobile={isMobile} />;
   else if (view === "simulator") content = <SimulatorView seed={simSeed} isMobile={isMobile} />;
   else if (view === "research") content = <ComparisonView savedAnalyses={savedAnalyses} isMobile={isMobile} />;
   else if (view === "assistant") content = <AssistantView savedAnalyses={savedAnalyses} currentAnalysis={analysis} isMobile={isMobile} />;
   else if (view === "watchlist") content = <WatchlistView savedAnalyses={savedAnalyses} onRemove={removeFromSaved} onSaveNote={saveNote} isMobile={isMobile} />;
-  else if (view === "settings") content = <AccountView user={user} signOut={signOut} isMobile={isMobile} />;
+  else if (view === "settings") content = <AccountView user={user} signOut={signOut} savedAnalyses={savedAnalyses} onClearAll={clearAllSaved} isMobile={isMobile} />;
   else content = <Placeholder label={TITLES[view]} />;
 
   if (isMobile) {
