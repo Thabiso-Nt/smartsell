@@ -5,7 +5,7 @@ import {
   LayoutGrid, ScanLine, Search, Store, Bookmark, LineChart, Bot, Settings,
   Camera, Upload, ArrowLeft, ArrowRight, ExternalLink,
   TrendingUp, ShieldCheck, AlertTriangle, CheckCircle2,
-  XCircle, Package, Info, Sparkles, Bell, ChevronRight, Home, User, Send, Trash2
+  XCircle, Package, Info, Sparkles, Bell, ChevronRight, Home, User, Send, Trash2, MoreHorizontal
 } from "lucide-react";
 
 /* ============================================================================
@@ -429,12 +429,15 @@ function MobileBottomNav({ view, setView }) {
     { id: "research", label: "Research", icon: Search },
     { id: "scan", label: "Scan", icon: ScanLine, elevated: true },
     { id: "watchlist", label: "Watchlist", icon: Bookmark },
-    { id: "settings", label: "Profile", icon: User },
+    { id: "more", label: "More", icon: MoreHorizontal },
   ];
+  const MORE_VIEWS = ["more", "marketplace", "assistant", "settings"];
   return (
     <div style={{ height: 74, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "space-around", borderTop: `1px solid ${T.line}`, background: T.panel }}>
       {items.map((it) => {
-        const active = view === it.id || (it.id === "scan" && (view === "analysis" || view === "simulator"));
+        const active = it.id === "more"
+          ? MORE_VIEWS.includes(view)
+          : view === it.id || (it.id === "scan" && (view === "analysis" || view === "simulator"));
         if (it.elevated) {
           return (
             <button key={it.id} onClick={() => setView(it.id)} style={{ position: "relative", top: -20, width: 56, height: 56, borderRadius: 99, background: T.lime, border: `4px solid ${T.bg}`, display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", boxShadow: "0 4px 14px rgba(198,255,61,0.25)" }}>
@@ -1680,6 +1683,39 @@ function MarketplaceView({ user, onScanThis, isMobile }) {
   );
 }
 
+/* ============================================================================
+   MORE MENU — mobile-only entry point to the pages that don't fit in the
+   5-tab bottom nav (Marketplace, Profit Simulator, AI Assistant, Settings).
+   ============================================================================ */
+function MoreMenuView({ setView }) {
+  const items = [
+    { id: "marketplace", label: "Marketplace", desc: "Your trending products list", icon: Store },
+    { id: "simulator", label: "Profit Simulator", desc: "Adjust price, cost & quantity live", icon: LineChart },
+    { id: "assistant", label: "AI Assistant", desc: "Ask about your saved products", icon: Bot },
+    { id: "settings", label: "Settings", desc: "Account, region, scan defaults", icon: Settings },
+  ];
+  return (
+    <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 10 }}>
+      {items.map((it) => (
+        <button
+          key={it.id}
+          onClick={() => setView(it.id)}
+          style={{ display: "flex", alignItems: "center", gap: 14, padding: "14px 16px", background: T.panel2, border: `1px solid ${T.line}`, borderRadius: 15, cursor: "pointer", textAlign: "left" }}
+        >
+          <div style={{ width: 38, height: 38, borderRadius: 11, background: T.panel3, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+            <it.icon size={18} color={T.lime} />
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 14, color: T.ink, fontWeight: 600 }}>{it.label}</div>
+            <div style={{ fontSize: 11.5, color: T.faint, marginTop: 2 }}>{it.desc}</div>
+          </div>
+          <ChevronRight size={16} color={T.faint} />
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function Placeholder({ label }) {
   return (
     <div style={{ padding: 28 }}>
@@ -1695,7 +1731,7 @@ function Placeholder({ label }) {
 /* ============================================================================
    APP
    ============================================================================ */
-const TITLES = { dashboard: "Overview", scan: "Scan Product", analysis: "Product Analysis", research: "Product Research", marketplace: "Marketplace Analysis", watchlist: "Watchlist", simulator: "Profit Simulator", assistant: "AI Assistant", settings: "Settings" };
+const TITLES = { dashboard: "Overview", scan: "Scan Product", analysis: "Product Analysis", research: "Product Research", marketplace: "Marketplace Analysis", watchlist: "Watchlist", simulator: "Profit Simulator", assistant: "AI Assistant", settings: "Settings", more: "More" };
 
 /* ============================================================================
    AUTH GATE — real login/signup with Supabase, same visual style.
@@ -2061,6 +2097,7 @@ function SmartSellDashboardApp({ user, signOut }) {
   else if (view === "research") content = <ComparisonView savedAnalyses={savedAnalyses} isMobile={isMobile} />;
   else if (view === "assistant") content = <AssistantView savedAnalyses={savedAnalyses} currentAnalysis={analysis} isMobile={isMobile} />;
   else if (view === "watchlist") content = <WatchlistView savedAnalyses={savedAnalyses} onRemove={removeFromSaved} onSaveNote={saveNote} isMobile={isMobile} />;
+  else if (view === "more") content = <MoreMenuView setView={setView} />;
   else if (view === "settings") content = <AccountView user={user} signOut={signOut} savedAnalyses={savedAnalyses} onClearAll={clearAllSaved} isMobile={isMobile} />;
   else content = <Placeholder label={TITLES[view]} />;
 
