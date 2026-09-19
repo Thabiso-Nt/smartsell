@@ -723,9 +723,21 @@ function ScanView({ onAnalyse, user, initialName }) {
 function AnalysisView({ data, onBack, onOpenSimulator, onSaveToComparison, isMobile }) {
   const [sort, setSort] = useState("Best Match");
   const [saved, setSaved] = useState(false);
+  const [savedAsUpdate, setSavedAsUpdate] = useState(false);
+  const [savingBusy, setSavingBusy] = useState(false);
   const { productName, marketplace, competitorStats, priceLadder, profitAnalysis, safetyFactor, opportunity, testQuantity } = data;
   const competitionLabel = competitorStats.competitionLevel >= 66 ? "High" : competitorStats.competitionLevel >= 33 ? "Moderate" : "Low";
   const competitionColor = competitorStats.competitionLevel >= 66 ? T.coral : competitorStats.competitionLevel >= 33 ? T.amber : T.lime;
+
+  const handleSave = async () => {
+    setSavingBusy(true);
+    const result = await onSaveToComparison(data);
+    setSavingBusy(false);
+    if (result?.ok) {
+      setSaved(true);
+      setSavedAsUpdate(!!result.updated);
+    }
+  };
 
   return (
     <div style={{ padding: isMobile ? 16 : 28, display: "flex", flexDirection: "column", gap: isMobile ? 14 : 20 }}>
@@ -735,11 +747,11 @@ function AnalysisView({ data, onBack, onOpenSimulator, onSaveToComparison, isMob
         </button>
         <div style={{ display: "flex", gap: 8 }}>
           <button
-            onClick={() => { onSaveToComparison(data); setSaved(true); }}
-            disabled={saved}
-            style={{ display: "flex", alignItems: "center", gap: 6, background: saved ? "rgba(198,255,61,0.1)" : T.panel3, border: `1px solid ${saved ? T.lime + "55" : T.line}`, color: saved ? T.lime : T.ink, fontSize: 12.5, fontWeight: 600, cursor: saved ? "default" : "pointer", padding: "8px 14px", borderRadius: 10 }}
+            onClick={handleSave}
+            disabled={saved || savingBusy}
+            style={{ display: "flex", alignItems: "center", gap: 6, background: saved ? "rgba(198,255,61,0.1)" : T.panel3, border: `1px solid ${saved ? T.lime + "55" : T.line}`, color: saved ? T.lime : T.ink, fontSize: 12.5, fontWeight: 600, cursor: saved ? "default" : "pointer", padding: "8px 14px", borderRadius: 10, opacity: savingBusy ? 0.7 : 1 }}
           >
-            <Bookmark size={14} color={saved ? T.lime : T.faint} /> {saved ? "Saved" : "Save to Compare"}
+            <Bookmark size={14} color={saved ? T.lime : T.faint} /> {savingBusy ? "Saving…" : saved ? (savedAsUpdate ? "Updated existing" : "Saved") : "Save to Compare"}
           </button>
           <button onClick={onOpenSimulator} style={{ display: "flex", alignItems: "center", gap: 6, background: T.panel3, border: `1px solid ${T.line}`, color: T.ink, fontSize: 12.5, fontWeight: 600, cursor: "pointer", padding: "8px 14px", borderRadius: 10 }}>
             <LineChart size={14} color={T.lime} /> {isMobile ? "Simulator" : "Open in Simulator"}
@@ -1947,14 +1959,28 @@ function SmartSellDashboardApp({ user, signOut }) {
 
   const handleAnalyse = (result) => { setAnalysis(result); setView("analysis"); };
   const saveToComparison = async (result) => {
+    const existing = savedAnalyses.find(
+      (a) => a.productName.trim().toLowerCase() === result.productName.trim().toLowerCase()
+    );
+
+    if (existing) {
+      const { error } = await supabase
+        .from("saved_products")
+        .update({ product_name: result.productName, data: result })
+        .eq("id", existing.id);
+      if (error) return { ok: false };
+      setSavedAnalyses((prev) => prev.map((a) => (a.id === existing.id ? { ...result, id: existing.id, note: a.note } : a)));
+      return { ok: true, updated: true };
+    }
+
     const { data, error } = await supabase
       .from("saved_products")
       .insert({ user_id: user.id, product_name: result.productName, data: result })
       .select()
       .single();
-    if (!error && data) {
-      setSavedAnalyses((prev) => [...prev, { ...result, id: data.id }]);
-    }
+    if (error || !data) return { ok: false };
+    setSavedAnalyses((prev) => [...prev, { ...result, id: data.id }]);
+    return { ok: true, updated: false };
   };
   const removeFromSaved = async (id) => {
     setSavedAnalyses((prev) => prev.filter((a) => a.id !== id)); // optimistic
