@@ -1445,22 +1445,6 @@ function AccountView({ user, signOut, savedAnalyses, onClearAll, isMobile }) {
     if (!error) setRegionMessage(`Saved — prices now show in ${currency.code} (${currency.symbol})`);
   };
 
-  // ---- Change password ----
-  const [newPassword, setNewPassword] = useState("");
-  const [pwBusy, setPwBusy] = useState(false);
-  const [pwMessage, setPwMessage] = useState("");
-  const [pwError, setPwError] = useState("");
-
-  const changePassword = async () => {
-    if (newPassword.length < 6) { setPwError("Password must be at least 6 characters."); setPwMessage(""); return; }
-    setPwError(""); setPwMessage(""); setPwBusy(true);
-    const { error } = await supabase.auth.updateUser({ password: newPassword });
-    setPwBusy(false);
-    if (error) { setPwError(error.message); return; }
-    setPwMessage("Password updated.");
-    setNewPassword("");
-  };
-
   // ---- Default preferences (stored on the user's own account, no extra table needed) ----
   const [defaultMarketplace, setDefaultMarketplace] = useState(user.user_metadata?.default_marketplace || "Takealot");
   const [defaultCategory, setDefaultCategory] = useState(user.user_metadata?.default_category || "Home & Kitchen");
@@ -1516,20 +1500,6 @@ function AccountView({ user, signOut, savedAnalyses, onClearAll, isMobile }) {
         {regionMessage && <div style={{ marginBottom: 12, padding: "9px 12px", background: "rgba(198,255,61,0.08)", border: `1px solid ${T.lime}44`, borderRadius: 10, color: T.lime, fontSize: 12 }}>{regionMessage}</div>}
         <button onClick={saveRegion} disabled={regionBusy} style={{ background: T.lime, color: "#0A0E17", border: "none", borderRadius: 10, padding: "9px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer", opacity: regionBusy ? 0.7 : 1 }}>
           {regionBusy ? "Saving…" : "Save region"}
-        </button>
-      </Card>
-
-      <Card>
-        <SectionTitle icon={ShieldCheck} title="Change password" />
-        <input
-          type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)}
-          placeholder="New password"
-          style={{ width: "100%", background: T.panel3, border: `1px solid ${T.line}`, borderRadius: 11, padding: "11px 14px", color: T.ink, fontSize: 13.5, marginBottom: 12, boxSizing: "border-box" }}
-        />
-        {pwError && <div style={{ marginBottom: 12, padding: "9px 12px", background: "rgba(255,110,110,0.08)", border: `1px solid ${T.coral}44`, borderRadius: 10, color: T.coral, fontSize: 12 }}>{pwError}</div>}
-        {pwMessage && <div style={{ marginBottom: 12, padding: "9px 12px", background: "rgba(198,255,61,0.08)", border: `1px solid ${T.lime}44`, borderRadius: 10, color: T.lime, fontSize: 12 }}>{pwMessage}</div>}
-        <button onClick={changePassword} disabled={pwBusy} style={{ background: T.lime, color: "#0A0E17", border: "none", borderRadius: 10, padding: "9px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer", opacity: pwBusy ? 0.7 : 1 }}>
-          {pwBusy ? "Saving…" : "Update password"}
         </button>
       </Card>
 
@@ -1794,58 +1764,32 @@ function LandingPage({ onGetStarted, onLogin }) {
   );
 }
 
-function AuthScreen({ onSignedIn, initialMode = "login", onBackToLanding }) {
-  const [mode, setMode] = useState(initialMode); // 'login' | 'signup' | 'forgot'
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [country, setCountry] = useState("South Africa");
+function GoogleGlyph({ size = 18 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 48 48">
+      <path fill="#FFC107" d="M43.611,20.083H42V20H24v8h11.303c-1.649,4.657-6.08,8-11.303,8c-6.627,0-12-5.373-12-12s5.373-12,12-12c3.059,0,5.842,1.154,7.961,3.039l5.657-5.657C34.046,6.053,29.268,4,24,4C12.955,4,4,12.955,4,24s8.955,20,20,20s20-8.955,20-20C44,22.659,43.862,21.35,43.611,20.083z"/>
+      <path fill="#FF3D00" d="M6.306,14.691l6.571,4.819C14.655,15.108,18.961,12,24,12c3.059,0,5.842,1.154,7.961,3.039l5.657-5.657C34.046,6.053,29.268,4,24,4C16.318,4,9.656,8.337,6.306,14.691z"/>
+      <path fill="#4CAF50" d="M24,44c5.166,0,9.86-1.977,13.409-5.192l-6.19-5.238C29.211,35.091,26.715,36,24,36c-5.202,0-9.619-3.317-11.283-7.946l-6.522,5.025C9.505,39.556,16.227,44,24,44z"/>
+      <path fill="#1976D2" d="M43.611,20.083H42V20H24v8h11.303c-0.792,2.237-2.231,4.166-4.087,5.571c0.001-0.001,0.002-0.001,0.003-0.002l6.19,5.238C36.971,39.205,44,34,44,24C44,22.659,43.862,21.35,43.611,20.083z"/>
+    </svg>
+  );
+}
+
+function AuthScreen({ onBackToLanding }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  const [message, setMessage] = useState("");
 
-  const submit = async () => {
-    if (mode === "forgot") {
-      if (!email.trim()) { setError("Enter the email you signed up with."); return; }
-      setError(""); setMessage(""); setBusy(true);
-      try {
-        const { error: err } = await supabase.auth.resetPasswordForEmail(email.trim(), {
-          redirectTo: typeof window !== "undefined" ? window.location.origin : undefined,
-        });
-        if (err) throw err;
-        setMessage("If that email has an account, a reset link has been sent — check your inbox.");
-      } catch (e) {
-        setError(e.message || "Something went wrong. Please try again.");
-      } finally {
-        setBusy(false);
-      }
-      return;
-    }
-
-    if (!email.trim() || !password) { setError("Please enter both an email and a password."); return; }
-    setError(""); setMessage(""); setBusy(true);
+  const signInWithGoogle = async () => {
+    setError(""); setBusy(true);
     try {
-      if (mode === "login") {
-        const { data, error: err } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
-        if (err) throw err;
-        onSignedIn(data.session);
-      } else {
-        const currency = COUNTRY_CURRENCY[country] || COUNTRY_CURRENCY["Other"];
-        const { data, error: err } = await supabase.auth.signUp({
-          email: email.trim(),
-          password,
-          options: { data: { country, currency_code: currency.code, currency_symbol: currency.symbol } },
-        });
-        if (err) throw err;
-        if (data.session) {
-          onSignedIn(data.session);
-        } else {
-          setMessage("Account created — check your email to confirm it, then log in.");
-          setMode("login");
-        }
-      }
+      const { error: err } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: { redirectTo: typeof window !== "undefined" ? window.location.origin : undefined },
+      });
+      if (err) throw err;
+      // Browser redirects to Google from here — nothing more to render.
     } catch (e) {
-      setError(e.message || "Something went wrong. Please try again.");
-    } finally {
+      setError(e.message || "Couldn't start Google sign-in. Please try again.");
       setBusy(false);
     }
   };
@@ -1853,127 +1797,85 @@ function AuthScreen({ onSignedIn, initialMode = "login", onBackToLanding }) {
   return (
     <div style={{ minHeight: "100vh", background: T.bg, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Inter', sans-serif", padding: 20 }}>
       <style>{fontImport}</style>
-      <Card style={{ width: "100%", maxWidth: 380 }}>
+      <Card style={{ width: "100%", maxWidth: 380, textAlign: "center" }}>
         {onBackToLanding && (
           <button onClick={onBackToLanding} style={{ background: "none", border: "none", color: T.faint, fontSize: 12, cursor: "pointer", padding: 0, marginBottom: 14, display: "flex", alignItems: "center", gap: 5 }}>
             <ArrowLeft size={13} /> Back
           </button>
         )}
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 22, justifyContent: "center" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10, justifyContent: "center" }}>
           <div style={{ width: 32, height: 32, borderRadius: 9, background: T.lime, display: "flex", alignItems: "center", justifyContent: "center" }}>
             <Sparkles size={17} color="#0A0E17" />
           </div>
           <span style={{ fontFamily: "'Space Grotesk', sans-serif", fontWeight: 700, fontSize: 19, color: T.ink }}>SmartSell</span>
         </div>
-
-        {mode !== "forgot" && (
-          <div style={{ display: "flex", background: T.panel3, borderRadius: 11, padding: 3, marginBottom: 20 }}>
-            {["login", "signup"].map((m) => (
-              <button key={m} onClick={() => { setMode(m); setError(""); setMessage(""); }} style={{ flex: 1, padding: "8px", borderRadius: 9, border: "none", cursor: "pointer", fontSize: 12.5, fontWeight: 600, background: mode === m ? T.lime : "transparent", color: mode === m ? "#0A0E17" : T.sub }}>
-                {m === "login" ? "Log in" : "Sign up"}
-              </button>
-            ))}
-          </div>
-        )}
-        {mode === "forgot" && (
-          <div style={{ marginBottom: 18 }}>
-            <div style={{ fontSize: 14, fontWeight: 600, color: T.ink, marginBottom: 4 }}>Reset your password</div>
-            <div style={{ fontSize: 12, color: T.faint }}>We'll email you a link to set a new one.</div>
-          </div>
-        )}
-
-        <label style={{ fontSize: 12, color: T.sub, display: "block", marginBottom: 6 }}>Email</label>
-        <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} style={{ width: "100%", background: T.panel3, border: `1px solid ${T.line}`, borderRadius: 11, padding: "11px 14px", color: T.ink, fontSize: 13.5, marginBottom: 14, boxSizing: "border-box" }} />
-
-        {mode !== "forgot" && (
-          <>
-            <label style={{ fontSize: 12, color: T.sub, display: "block", marginBottom: 6 }}>Password</label>
-            <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") submit(); }} style={{ width: "100%", background: T.panel3, border: `1px solid ${T.line}`, borderRadius: 11, padding: "11px 14px", color: T.ink, fontSize: 13.5, marginBottom: 8, boxSizing: "border-box" }} />
-          </>
-        )}
-
-        {mode === "signup" && (
-          <div style={{ marginBottom: 8 }}>
-            <label style={{ fontSize: 12, color: T.sub, display: "block", marginBottom: 6 }}>Country</label>
-            <select value={country} onChange={(e) => setCountry(e.target.value)} style={{ width: "100%", background: T.panel3, border: `1px solid ${T.line}`, borderRadius: 11, padding: "11px 14px", color: T.ink, fontSize: 13.5, boxSizing: "border-box" }}>
-              {Object.keys(COUNTRY_CURRENCY).map((c) => <option key={c}>{c}</option>)}
-            </select>
-            <div style={{ fontSize: 11, color: T.faint, marginTop: 6 }}>
-              Prices will show in {COUNTRY_CURRENCY[country].code} ({COUNTRY_CURRENCY[country].symbol})
-              {CURRENCIES_WITHOUT_LIVE_RATES.has(COUNTRY_CURRENCY[country].code) && " — symbol only, live conversion isn't available for this currency yet"}
-            </div>
-          </div>
-        )}
-
-        {mode === "login" && (
-          <button onClick={() => { setMode("forgot"); setError(""); setMessage(""); }} style={{ background: "none", border: "none", color: T.blue, fontSize: 11.5, cursor: "pointer", padding: 0, marginBottom: 14, display: "block" }}>
-            Forgot password?
-          </button>
-        )}
-        {mode === "forgot" && (
-          <button onClick={() => { setMode("login"); setError(""); setMessage(""); }} style={{ background: "none", border: "none", color: T.blue, fontSize: 11.5, cursor: "pointer", padding: 0, marginBottom: 14, display: "block" }}>
-            ← Back to log in
-          </button>
-        )}
+        <div style={{ fontSize: 12.5, color: T.faint, marginBottom: 26 }}>Sign in to scan, save, and track products.</div>
 
         {error && (
-          <div style={{ marginBottom: 14, padding: "10px 12px", background: "rgba(255,110,110,0.08)", border: `1px solid ${T.coral}44`, borderRadius: 10, color: T.coral, fontSize: 12.5 }}>{error}</div>
-        )}
-        {message && (
-          <div style={{ marginBottom: 14, padding: "10px 12px", background: "rgba(198,255,61,0.08)", border: `1px solid ${T.lime}44`, borderRadius: 10, color: T.lime, fontSize: 12.5 }}>{message}</div>
+          <div style={{ marginBottom: 16, padding: "10px 12px", background: "rgba(255,110,110,0.08)", border: `1px solid ${T.coral}44`, borderRadius: 10, color: T.coral, fontSize: 12.5, textAlign: "left" }}>{error}</div>
         )}
 
-        <button onClick={submit} disabled={busy} style={{ width: "100%", background: T.lime, color: "#0A0E17", border: "none", borderRadius: 12, padding: "13px", fontWeight: 700, fontSize: 14, cursor: "pointer", opacity: busy ? 0.7 : 1 }}>
-          {busy ? "Please wait…" : mode === "forgot" ? "Send reset link" : mode === "login" ? "Log in" : "Create account"}
+        <button
+          onClick={signInWithGoogle}
+          disabled={busy}
+          style={{ width: "100%", background: "#fff", color: "#1F1F1F", border: "1px solid #dadce0", borderRadius: 12, padding: "12px", fontWeight: 600, fontSize: 14, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 10, opacity: busy ? 0.7 : 1 }}
+        >
+          <GoogleGlyph size={18} />
+          {busy ? "Redirecting to Google…" : "Continue with Google"}
         </button>
+
+        <div style={{ fontSize: 11, color: T.faint, marginTop: 16, lineHeight: 1.6 }}>
+          First time here? Clicking above creates your account automatically — no separate sign-up needed.
+        </div>
       </Card>
     </div>
   );
 }
 
-function SetNewPasswordScreen({ onDone }) {
-  const [password, setPassword] = useState("");
+/** Shown once, right after a brand-new Google sign-in, since Google's own
+ *  consent screen can't collect a country/currency preference for us. */
+function WelcomeCountryScreen({ user }) {
+  const [country, setCountry] = useState("South Africa");
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
 
-  const submit = async () => {
-    if (password.length < 6) { setError("Password must be at least 6 characters."); return; }
-    setError(""); setBusy(true);
-    const { error: err } = await supabase.auth.updateUser({ password });
-    setBusy(false);
-    if (err) { setError(err.message); return; }
-    onDone();
+  const save = async () => {
+    setBusy(true);
+    const currency = COUNTRY_CURRENCY[country] || COUNTRY_CURRENCY["Other"];
+    await supabase.auth.updateUser({ data: { country, currency_code: currency.code, currency_symbol: currency.symbol } });
+    // AuthGate's onAuthStateChange listener picks up the updated metadata automatically.
   };
 
   return (
     <div style={{ minHeight: "100vh", background: T.bg, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Inter', sans-serif", padding: 20 }}>
       <style>{fontImport}</style>
       <Card style={{ width: "100%", maxWidth: 380 }}>
-        <div style={{ fontSize: 15, fontWeight: 600, color: T.ink, marginBottom: 4 }}>Set a new password</div>
-        <div style={{ fontSize: 12, color: T.faint, marginBottom: 18 }}>Choose a new password for your account.</div>
-        <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") submit(); }} placeholder="New password" style={{ width: "100%", background: T.panel3, border: `1px solid ${T.line}`, borderRadius: 11, padding: "11px 14px", color: T.ink, fontSize: 13.5, marginBottom: 14, boxSizing: "border-box" }} />
-        {error && <div style={{ marginBottom: 14, padding: "10px 12px", background: "rgba(255,110,110,0.08)", border: `1px solid ${T.coral}44`, borderRadius: 10, color: T.coral, fontSize: 12.5 }}>{error}</div>}
-        <button onClick={submit} disabled={busy} style={{ width: "100%", background: T.lime, color: "#0A0E17", border: "none", borderRadius: 12, padding: "13px", fontWeight: 700, fontSize: 14, cursor: "pointer", opacity: busy ? 0.7 : 1 }}>
-          {busy ? "Saving…" : "Save new password"}
+        <div style={{ fontSize: 15, fontWeight: 600, color: T.ink, marginBottom: 4 }}>Welcome to SmartSell!</div>
+        <div style={{ fontSize: 12, color: T.faint, marginBottom: 20 }}>One last thing — which country are you selling from? This sets your currency.</div>
+        <select value={country} onChange={(e) => setCountry(e.target.value)} style={{ width: "100%", background: T.panel3, border: `1px solid ${T.line}`, borderRadius: 11, padding: "11px 14px", color: T.ink, fontSize: 13.5, marginBottom: 8, boxSizing: "border-box" }}>
+          {Object.keys(COUNTRY_CURRENCY).map((c) => <option key={c}>{c}</option>)}
+        </select>
+        <div style={{ fontSize: 11, color: T.faint, marginBottom: 18 }}>
+          Prices will show in {COUNTRY_CURRENCY[country].code} ({COUNTRY_CURRENCY[country].symbol})
+          {CURRENCIES_WITHOUT_LIVE_RATES.has(COUNTRY_CURRENCY[country].code) && " — symbol only, live conversion isn't available for this currency yet"}
+        </div>
+        <button onClick={save} disabled={busy} style={{ width: "100%", background: T.lime, color: "#0A0E17", border: "none", borderRadius: 12, padding: "13px", fontWeight: 700, fontSize: 14, cursor: "pointer", opacity: busy ? 0.7 : 1 }}>
+          {busy ? "Saving…" : "Continue"}
         </button>
       </Card>
     </div>
   );
 }
 
-/** Shows the AuthScreen until signed in, then renders the real app. */
+
+/** Shows the landing page / Google sign-in until authenticated, then a
+ *  one-time country prompt for brand-new users, then the real app. */
 function AuthGate({ children }) {
   const [session, setSession] = useState(undefined); // undefined = loading, null = signed out
-  const [recovery, setRecovery] = useState(false);
   const [screen, setScreen] = useState("landing"); // 'landing' | 'auth'
-  const [authMode, setAuthMode] = useState("login");
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSession(data.session));
-    const { data: listener } = supabase.auth.onAuthStateChange((event, newSession) => {
-      if (event === "PASSWORD_RECOVERY") setRecovery(true);
-      setSession(newSession);
-    });
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, newSession) => setSession(newSession));
     return () => listener.subscription.unsubscribe();
   }, []);
 
@@ -1985,19 +1887,14 @@ function AuthGate({ children }) {
       </div>
     );
   }
-  if (recovery) {
-    return <SetNewPasswordScreen onDone={() => setRecovery(false)} />;
-  }
   if (!session) {
     if (screen === "landing") {
-      return (
-        <LandingPage
-          onGetStarted={() => { setAuthMode("signup"); setScreen("auth"); }}
-          onLogin={() => { setAuthMode("login"); setScreen("auth"); }}
-        />
-      );
+      return <LandingPage onGetStarted={() => setScreen("auth")} onLogin={() => setScreen("auth")} />;
     }
-    return <AuthScreen onSignedIn={setSession} initialMode={authMode} onBackToLanding={() => setScreen("landing")} />;
+    return <AuthScreen onBackToLanding={() => setScreen("landing")} />;
+  }
+  if (!session.user.user_metadata?.country) {
+    return <WelcomeCountryScreen user={session.user} />;
   }
   return children(session.user);
 }
