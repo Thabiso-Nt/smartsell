@@ -32,7 +32,38 @@ const COUNTRY_CURRENCY = {
 // Set once per render from the signed-in user's saved country (see
 // SmartSellDashboardApp). Defaults to Rand for anyone without one set yet.
 let CURRENCY_SYMBOL = "R";
-const fmtR = (n) => `${CURRENCY_SYMBOL}${Math.round(n).toLocaleString()}`;
+// Multiply a ZAR amount by this to get the amount in the user's display
+// currency. The whole calculation engine works in ZAR internally (that's
+// the scale its cost/fee constants were designed around); conversion only
+// happens at the point numbers are entered (toZAR) or displayed (fmtR).
+let EXCHANGE_RATE_FROM_ZAR = 1;
+// False for currencies the free rate source doesn't cover (e.g. NGN, KES) —
+// in that case we honestly fall back to symbol-only, no fake conversion.
+let EXCHANGE_RATE_SUPPORTED = true;
+
+const CURRENCIES_WITHOUT_LIVE_RATES = new Set(["NGN", "KES"]);
+const exchangeRateCache = {};
+
+/** Frankfurter.app is a free, keyless, no-signup exchange rate API (ECB data). */
+async function fetchRateFromZAR(currencyCode) {
+  if (currencyCode === "ZAR" || CURRENCIES_WITHOUT_LIVE_RATES.has(currencyCode)) return null;
+  if (exchangeRateCache[currencyCode] !== undefined) return exchangeRateCache[currencyCode];
+  try {
+    const res = await fetch(`https://api.frankfurter.app/latest?from=ZAR&to=${currencyCode}`);
+    const data = await res.json();
+    const rate = data?.rates?.[currencyCode] || null;
+    exchangeRateCache[currencyCode] = rate;
+    return rate;
+  } catch {
+    return null;
+  }
+}
+
+/** Converts an amount the user typed (in their display currency) back to
+ *  ZAR before it goes into the engine, so proportions stay correct
+ *  regardless of which currency someone is using. */
+const toZAR = (displayAmount) => displayAmount / EXCHANGE_RATE_FROM_ZAR;
+const fmtR = (n) => `${CURRENCY_SYMBOL}${Math.round(n * EXCHANGE_RATE_FROM_ZAR).toLocaleString()}`;
 const fmtPct = (n) => `${n.toFixed(1)}%`;
 
 // Adaptive layout hook — mobile gets a genuinely different shell/flow, not a
@@ -511,7 +542,7 @@ function QuickScanView({ onAnalyse, user, initialName }) {
     setError("");
     setBusy(true);
     setTimeout(() => {
-      const result = runSmartSellAnalysis({ productName: name.trim() || "Scanned product", supplierPrice, marketplace, category });
+      const result = runSmartSellAnalysis({ productName: name.trim() || "Scanned product", supplierPrice: toZAR(supplierPrice), marketplace, category });
       setBusy(false);
       onAnalyse(result);
     }, 1100);
@@ -597,7 +628,7 @@ function ScanView({ onAnalyse, user, initialName }) {
     setError("");
     setBusy(true);
     setTimeout(() => {
-      const result = runSmartSellAnalysis({ productName: name.trim(), supplierPrice, marketplace, category });
+      const result = runSmartSellAnalysis({ productName: name.trim(), supplierPrice: toZAR(supplierPrice), marketplace, category });
       setBusy(false);
       onAnalyse(result);
     }, 1100);
@@ -924,7 +955,7 @@ function SimulatorView({ seed, isMobile }) {
   const [category, setCategory] = useState(seed?.category ?? "Home & Kitchen");
   const [quantity, setQuantity] = useState(5);
 
-  const result = simulateScenario({ supplierPrice, sellingPrice, marketplace, category, quantity });
+  const result = simulateScenario({ supplierPrice: toZAR(supplierPrice), sellingPrice: toZAR(sellingPrice), marketplace, category, quantity });
   const { profit, margin, safetyFactor, opportunity, competitorStats, costBreakdown, totalProfit, capitalExposure } = result;
 
   return (
@@ -1474,6 +1505,11 @@ function AccountView({ user, signOut, savedAnalyses, onClearAll, isMobile }) {
         <select value={country} onChange={(e) => setCountry(e.target.value)} style={{ width: "100%", background: T.panel3, border: `1px solid ${T.line}`, borderRadius: 11, padding: "10px 14px", color: T.ink, fontSize: 13, marginBottom: 12, boxSizing: "border-box" }}>
           {Object.keys(COUNTRY_CURRENCY).map((c) => <option key={c}>{c}</option>)}
         </select>
+        <div style={{ fontSize: 11, color: T.faint, marginBottom: 12 }}>
+          {CURRENCIES_WITHOUT_LIVE_RATES.has(COUNTRY_CURRENCY[country].code)
+            ? "This currency shows the right symbol, but live exchange-rate conversion isn't available for it yet — amounts are approximate."
+            : "Prices convert automatically using live exchange rates, updated daily."}
+        </div>
         {regionMessage && <div style={{ marginBottom: 12, padding: "9px 12px", background: "rgba(198,255,61,0.08)", border: `1px solid ${T.lime}44`, borderRadius: 10, color: T.lime, fontSize: 12 }}>{regionMessage}</div>}
         <button onClick={saveRegion} disabled={regionBusy} style={{ background: T.lime, color: "#0A0E17", border: "none", borderRadius: 10, padding: "9px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer", opacity: regionBusy ? 0.7 : 1 }}>
           {regionBusy ? "Saving…" : "Save region"}
@@ -1828,6 +1864,7 @@ function AuthScreen({ onSignedIn, initialMode = "login", onBackToLanding }) {
             </select>
             <div style={{ fontSize: 11, color: T.faint, marginTop: 6 }}>
               Prices will show in {COUNTRY_CURRENCY[country].code} ({COUNTRY_CURRENCY[country].symbol})
+              {CURRENCIES_WITHOUT_LIVE_RATES.has(COUNTRY_CURRENCY[country].code) && " — symbol only, live conversion isn't available for this currency yet"}
             </div>
           </div>
         )}
@@ -1932,12 +1969,33 @@ function AuthGate({ children }) {
 function SmartSellDashboardApp({ user, signOut }) {
   // Every price formatted with fmtR() during this render uses this symbol.
   CURRENCY_SYMBOL = user.user_metadata?.currency_symbol || "R";
+  const currencyCode = user.user_metadata?.currency_code || "ZAR";
   const isMobile = useIsMobile();
   const [view, setView] = useState("dashboard");
   const [analysis, setAnalysis] = useState(null);
   const [simSeed, setSimSeed] = useState(null);
   const [scanSeed, setScanSeed] = useState(null);
   const [savedAnalyses, setSavedAnalyses] = useState([]);
+  const [, forceRerenderForRate] = useState(0);
+
+  // Fetch the real ZAR -> user-currency rate once per currency. Numbers on
+  // screen won't be exactly right until this resolves (briefly shows 1:1),
+  // then re-renders with the live rate.
+  useEffect(() => {
+    let ignore = false;
+    fetchRateFromZAR(currencyCode).then((rate) => {
+      if (ignore) return;
+      if (rate) {
+        EXCHANGE_RATE_FROM_ZAR = rate;
+        EXCHANGE_RATE_SUPPORTED = true;
+      } else {
+        EXCHANGE_RATE_FROM_ZAR = 1;
+        EXCHANGE_RATE_SUPPORTED = currencyCode === "ZAR";
+      }
+      forceRerenderForRate((x) => x + 1);
+    });
+    return () => { ignore = true; };
+  }, [currencyCode]);
 
   // Load this user's saved products from Supabase once, on sign-in.
   useEffect(() => {
@@ -1986,8 +2044,8 @@ function SmartSellDashboardApp({ user, signOut }) {
   };
   const openSimulatorFromAnalysis = () => {
     setSimSeed({
-      supplierPrice: analysis.supplierPrice,
-      sellingPrice: analysis.profitAnalysis.sellingPrice,
+      supplierPrice: Math.round(analysis.supplierPrice * EXCHANGE_RATE_FROM_ZAR),
+      sellingPrice: Math.round(analysis.profitAnalysis.sellingPrice * EXCHANGE_RATE_FROM_ZAR),
       marketplace: analysis.marketplace,
       category: analysis.category,
     });
