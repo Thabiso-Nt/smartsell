@@ -489,8 +489,8 @@ function Dashboard({ setView, savedAnalyses, isMobile }) {
    QUICK SCAN — mobile-only minimal flow: photo/name, price, Analyse.
    Deliberately not the full desktop form; advanced fields are tucked away.
    ============================================================================ */
-function QuickScanView({ onAnalyse, user }) {
-  const [name, setName] = useState("");
+function QuickScanView({ onAnalyse, user, initialName }) {
+  const [name, setName] = useState(initialName || "");
   const [price, setPrice] = useState("");
   const [marketplace, setMarketplace] = useState(user?.user_metadata?.default_marketplace || "Takealot");
   const [category, setCategory] = useState(user?.user_metadata?.default_category || "Home & Kitchen");
@@ -575,8 +575,8 @@ function QuickScanView({ onAnalyse, user }) {
 /* ============================================================================
    SCAN VIEW — now a real form feeding the engine
    ============================================================================ */
-function ScanView({ onAnalyse, user }) {
-  const [name, setName] = useState("Insulated Steel Water Bottle 750ml");
+function ScanView({ onAnalyse, user, initialName }) {
+  const [name, setName] = useState(initialName || "Insulated Steel Water Bottle 750ml");
   const [price, setPrice] = useState("200");
   const [marketplace, setMarketplace] = useState(user?.user_metadata?.default_marketplace || "Takealot");
   const [category, setCategory] = useState(user?.user_metadata?.default_category || "Home & Kitchen");
@@ -1527,6 +1527,123 @@ function AccountView({ user, signOut, savedAnalyses, onClearAll, isMobile }) {
   );
 }
 
+/* ============================================================================
+   TRENDING PRODUCTS — a manually curated watchlist of products the user has
+   noticed trending elsewhere (Google, TikTok, Amazon, Takealot, Makro).
+   HONEST LIMITATION: there is no live connection to any of these platforms'
+   trending/search data — no public, free, or partnership-free API exists for
+   this (see spec section 22 on legitimate data access). This is a manual
+   research notebook, not a live trends feed, and is labelled as such.
+   ============================================================================ */
+const TRENDING_PLATFORMS = {
+  Google: { color: T.blue },
+  TikTok: { color: T.coral },
+  Amazon: { color: T.amber },
+  Takealot: { color: T.lime },
+  "Makro Marketplace": { color: "#B993FF" },
+  Other: { color: T.faint },
+};
+
+function MarketplaceView({ user, onScanThis, isMobile }) {
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [name, setName] = useState("");
+  const [platform, setPlatform] = useState("Google");
+  const [note, setNote] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    let ignore = false;
+    supabase
+      .from("trending_products")
+      .select("*")
+      .order("created_at", { ascending: false })
+      .then(({ data, error }) => {
+        if (!ignore && !error && data) setItems(data);
+        setLoading(false);
+      });
+    return () => { ignore = true; };
+  }, [user.id]);
+
+  const addItem = async () => {
+    if (!name.trim()) return;
+    setSaving(true);
+    const { data, error } = await supabase
+      .from("trending_products")
+      .insert({ user_id: user.id, name: name.trim(), platform, note: note.trim() || null })
+      .select()
+      .single();
+    setSaving(false);
+    if (!error && data) {
+      setItems((prev) => [data, ...prev]);
+      setName(""); setNote("");
+    }
+  };
+
+  const removeItem = async (id) => {
+    setItems((prev) => prev.filter((i) => i.id !== id)); // optimistic
+    await supabase.from("trending_products").delete().eq("id", id);
+  };
+
+  return (
+    <div style={{ padding: isMobile ? 16 : 28, display: "flex", flexDirection: "column", gap: 16 }}>
+      <Card style={{ background: "rgba(255,184,77,0.06)", border: `1px solid ${T.amber}33` }}>
+        <div style={{ display: "flex", gap: 9 }}>
+          <AlertTriangle size={16} color={T.amber} style={{ flexShrink: 0, marginTop: 1 }} />
+          <div style={{ fontSize: 12, color: T.sub, lineHeight: 1.6 }}>
+            This is a manual research list, not a live trends feed. There's no public API for "most searched" data from Google, TikTok, Amazon, Takealot or Makro without a paid data subscription or an official partnership — so nothing here is pulled automatically. Add what you notice yourself.
+          </div>
+        </div>
+      </Card>
+
+      <Card>
+        <SectionTitle icon={Store} title="Add a trending product" />
+        <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "2fr 1fr", gap: 12, marginBottom: 12 }}>
+          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Product name" style={{ background: T.panel3, border: `1px solid ${T.line}`, borderRadius: 11, padding: "10px 14px", color: T.ink, fontSize: 13.5, boxSizing: "border-box" }} />
+          <select value={platform} onChange={(e) => setPlatform(e.target.value)} style={{ background: T.panel3, border: `1px solid ${T.line}`, borderRadius: 11, padding: "10px 14px", color: T.ink, fontSize: 13.5, boxSizing: "border-box" }}>
+            {Object.keys(TRENDING_PLATFORMS).map((p) => <option key={p}>{p}</option>)}
+          </select>
+        </div>
+        <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Note (optional) — e.g. 'seen everywhere on TikTok this week'" style={{ width: "100%", background: T.panel3, border: `1px solid ${T.line}`, borderRadius: 11, padding: "10px 14px", color: T.ink, fontSize: 13, marginBottom: 12, boxSizing: "border-box" }} />
+        <button onClick={addItem} disabled={saving || !name.trim()} style={{ background: T.lime, color: "#0A0E17", border: "none", borderRadius: 10, padding: "9px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer", opacity: saving || !name.trim() ? 0.6 : 1 }}>
+          {saving ? "Adding…" : "Add to list"}
+        </button>
+      </Card>
+
+      <Card>
+        <SectionTitle icon={TrendingUp} title="Your trending list" tag={<Pill>{items.length} item{items.length === 1 ? "" : "s"}</Pill>} />
+        {loading ? (
+          <div style={{ fontSize: 12.5, color: T.faint, textAlign: "center", padding: 20 }}>Loading…</div>
+        ) : items.length === 0 ? (
+          <div style={{ fontSize: 12.5, color: T.faint, textAlign: "center", padding: 20 }}>Nothing added yet — noticed something hot? Add it above.</div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {items.map((item) => (
+              <div key={item.id} style={{ display: "flex", flexDirection: isMobile ? "column" : "row", alignItems: isMobile ? "flex-start" : "center", gap: isMobile ? 8 : 0, justifyContent: "space-between", padding: "12px 14px", background: T.panel3, borderRadius: 13 }}>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+                    <span style={{ fontSize: 13.5, color: T.ink, fontWeight: 500 }}>{item.name}</span>
+                    <Pill color={TRENDING_PLATFORMS[item.platform]?.color || T.faint}>{item.platform}</Pill>
+                  </div>
+                  {item.note && <div style={{ fontSize: 11.5, color: T.faint }}>{item.note}</div>}
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: 10, alignSelf: isMobile ? "flex-end" : "center" }}>
+                  <button onClick={() => onScanThis(item.name)} style={{ background: T.panel, border: `1px solid ${T.line}`, color: T.ink, fontSize: 12, fontWeight: 600, cursor: "pointer", padding: "7px 12px", borderRadius: 9, display: "flex", alignItems: "center", gap: 6 }}>
+                    <ScanLine size={13} color={T.lime} /> Scan this
+                  </button>
+                  <button onClick={() => removeItem(item.id)} style={{ background: "none", border: "none", cursor: "pointer", padding: 4, display: "flex" }} title="Remove">
+                    <Trash2 size={15} color={T.faint} />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+    </div>
+  );
+}
+
 function Placeholder({ label }) {
   return (
     <div style={{ padding: 28 }}>
@@ -1819,6 +1936,7 @@ function SmartSellDashboardApp({ user, signOut }) {
   const [view, setView] = useState("dashboard");
   const [analysis, setAnalysis] = useState(null);
   const [simSeed, setSimSeed] = useState(null);
+  const [scanSeed, setScanSeed] = useState(null);
   const [savedAnalyses, setSavedAnalyses] = useState([]);
 
   // Load this user's saved products from Supabase once, on sign-in.
@@ -1878,7 +1996,8 @@ function SmartSellDashboardApp({ user, signOut }) {
 
   let content;
   if (view === "dashboard") content = <Dashboard setView={setView} savedAnalyses={savedAnalyses} isMobile={isMobile} />;
-  else if (view === "scan") content = isMobile ? <QuickScanView onAnalyse={handleAnalyse} user={user} /> : <ScanView onAnalyse={handleAnalyse} user={user} />;
+  else if (view === "scan") content = isMobile ? <QuickScanView onAnalyse={handleAnalyse} user={user} initialName={scanSeed} /> : <ScanView onAnalyse={handleAnalyse} user={user} initialName={scanSeed} />;
+  else if (view === "marketplace") content = <MarketplaceView user={user} onScanThis={(n) => { setScanSeed(n); setView("scan"); }} isMobile={isMobile} />;
   else if (view === "analysis" && analysis) content = <AnalysisView data={analysis} onBack={() => setView("scan")} onOpenSimulator={openSimulatorFromAnalysis} onSaveToComparison={saveToComparison} isMobile={isMobile} />;
   else if (view === "simulator") content = <SimulatorView seed={simSeed} isMobile={isMobile} />;
   else if (view === "research") content = <ComparisonView savedAnalyses={savedAnalyses} isMobile={isMobile} />;
