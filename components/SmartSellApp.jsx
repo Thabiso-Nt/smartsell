@@ -309,6 +309,19 @@ const SOURCE_META = {
 /* ============================================================================
    UI PRIMITIVES (unchanged)
    ============================================================================ */
+function LoadErrorBanner({ onRetry }) {
+  return (
+    <Card style={{ background: "rgba(255,110,110,0.06)", border: `1px solid ${T.coral}33`, textAlign: "center", padding: 24 }}>
+      <AlertTriangle size={18} color={T.coral} style={{ marginBottom: 8 }} />
+      <div style={{ fontSize: 13, color: T.ink, fontWeight: 600, marginBottom: 4 }}>Couldn't load your saved products</div>
+      <div style={{ fontSize: 12, color: T.faint, marginBottom: 14 }}>This is usually a connection hiccup, not something wrong with your data.</div>
+      <button onClick={onRetry} style={{ background: T.panel3, border: `1px solid ${T.line}`, color: T.ink, fontSize: 12.5, fontWeight: 600, cursor: "pointer", padding: "8px 16px", borderRadius: 10 }}>
+        Try again
+      </button>
+    </Card>
+  );
+}
+
 function Card({ children, style, className }) {
   return (
     <div className={className} style={{ background: T.panel2, border: `1px solid ${T.line}`, borderRadius: 18, padding: 20, ...style }}>
@@ -355,7 +368,7 @@ function SectionTitle({ icon: Icon, title, tag }) {
 /* ============================================================================
    SIDEBAR / TOPBAR (unchanged)
    ============================================================================ */
-function Sidebar({ view, setView }) {
+function Sidebar({ view, setView, savedCount }) {
   return (
     <div style={{ width: 232, flexShrink: 0, background: T.panel, borderRight: `1px solid ${T.line}`, display: "flex", flexDirection: "column", padding: "22px 14px" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "0 8px", marginBottom: 30 }}>
@@ -376,9 +389,8 @@ function Sidebar({ view, setView }) {
       </div>
       <div style={{ marginTop: "auto" }}>
         <Card style={{ padding: 14, background: T.panel3 }}>
-          <div style={{ fontSize: 12, color: T.sub, marginBottom: 8 }}>Free plan</div>
-          <div style={{ fontSize: 11.5, color: T.faint, marginBottom: 10 }}>7 of 10 scans used this month</div>
-          <Bar pct={70} />
+          <div style={{ fontSize: 12, color: T.sub, marginBottom: 4 }}>Free plan</div>
+          <div style={{ fontSize: 11.5, color: T.faint }}>{savedCount} product{savedCount === 1 ? "" : "s"} saved</div>
         </Card>
       </div>
     </div>
@@ -459,7 +471,7 @@ function MobileBottomNav({ view, setView }) {
 /* ============================================================================
    DASHBOARD
    ============================================================================ */
-function Dashboard({ setView, savedAnalyses, isMobile }) {
+function Dashboard({ setView, savedAnalyses, loadError, onRetry, isMobile }) {
   const total = savedAnalyses.length;
   const good = savedAnalyses.filter((a) => a.opportunity.decision === "good").length;
   const caution = savedAnalyses.filter((a) => a.opportunity.decision === "caution").length;
@@ -477,6 +489,14 @@ function Dashboard({ setView, savedAnalyses, isMobile }) {
   ];
 
   const recent = [...savedAnalyses].slice(-4).reverse();
+
+  if (loadError) {
+    return (
+      <div style={{ padding: isMobile ? 16 : 28 }}>
+        <LoadErrorBanner onRetry={onRetry} />
+      </div>
+    );
+  }
 
   return (
     <div style={{ padding: isMobile ? 16 : 28, display: "flex", flexDirection: "column", gap: isMobile ? 16 : 22 }}>
@@ -1071,7 +1091,7 @@ const COMPARISON_ROWS = [
   { key: "testQty", label: "Recommended test qty", fmt: (v) => `${v} units`, get: (a) => a.testQuantity.qty },
 ];
 
-function ComparisonView({ savedAnalyses, isMobile }) {
+function ComparisonView({ savedAnalyses, loadError, onRetry, isMobile }) {
   const [selectedIds, setSelectedIds] = useState(() => savedAnalyses.slice(0, 3).map((a) => a.id));
 
   const toggle = (id) => {
@@ -1084,6 +1104,14 @@ function ComparisonView({ savedAnalyses, isMobile }) {
 
   const selected = savedAnalyses.filter((a) => selectedIds.includes(a.id));
   const best = selected.length > 1 ? selected.reduce((a, b) => (b.opportunity.score > a.opportunity.score ? b : a)) : null;
+
+  if (loadError) {
+    return (
+      <div style={{ padding: isMobile ? 16 : 28 }}>
+        <LoadErrorBanner onRetry={onRetry} />
+      </div>
+    );
+  }
 
   if (savedAnalyses.length === 0) {
     return (
@@ -1256,25 +1284,23 @@ Rules:
 - If the data needed to answer isn't present (e.g. no products saved yet), say so plainly and suggest the person scan/save a product first — do not make up numbers.
 - The Safety Factor is a decision-support metric, never a guarantee against loss — don't imply otherwise.
 - Be direct and concise (short paragraphs or a short list), like a sharp analyst, not a generic chatbot.
-- Currency is South African Rand (R).
+- Currency symbol in this data is "${CURRENCY_SYMBOL}" — use that symbol, not any other currency sign.
 
 User's SmartSell data:
 ${JSON.stringify(context, null, 2)}`;
 
     try {
       const apiMessages = nextMessages.map((m) => ({ role: m.role === "assistant" ? "assistant" : "user", content: m.text }));
-      const response = await fetch("https://api.anthropic.com/v1/messages", {
+      const response = await fetch("/api/assistant", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          model: "claude-sonnet-4-6",
-          max_tokens: 1000,
-          system: systemPrompt,
-          messages: apiMessages,
-        }),
+        body: JSON.stringify({ systemPrompt, messages: apiMessages }),
       });
       const data = await response.json();
-      const textOut = (data.content || []).map((b) => (b.type === "text" ? b.text : "")).filter(Boolean).join("\n") || "I couldn't generate a response — please try again.";
+      if (!response.ok || data.error) {
+        throw new Error(data.error || "Assistant request failed.");
+      }
+      const textOut = data.text || "I couldn't generate a response — please try again.";
       setMessages((prev) => [...prev, { role: "assistant", text: textOut }]);
     } catch (e) {
       setError("Couldn't reach the assistant right now. Please try again.");
@@ -1412,7 +1438,15 @@ function WatchlistItem({ a, onRemove, onSaveNote, isMobile }) {
   );
 }
 
-function WatchlistView({ savedAnalyses, onRemove, onSaveNote, isMobile }) {
+function WatchlistView({ savedAnalyses, onRemove, onSaveNote, loadError, onRetry, isMobile }) {
+  if (loadError) {
+    return (
+      <div style={{ padding: isMobile ? 16 : 28 }}>
+        <LoadErrorBanner onRetry={onRetry} />
+      </div>
+    );
+  }
+
   if (savedAnalyses.length === 0) {
     return (
       <div style={{ padding: isMobile ? 16 : 28 }}>
@@ -1943,16 +1977,42 @@ function SmartSellDashboardApp({ user, signOut }) {
   }, [currencyCode]);
 
   // Load this user's saved products from Supabase once, on sign-in.
+  const [savedLoading, setSavedLoading] = useState(true);
+  const [savedLoadError, setSavedLoadError] = useState(false);
+
+  const loadSavedAnalyses = () => {
+    setSavedLoading(true);
+    setSavedLoadError(false);
+    return supabase
+      .from("saved_products")
+      .select("*")
+      .order("created_at", { ascending: true })
+      .then(({ data, error }) => {
+        if (error || !data) {
+          setSavedLoadError(true);
+        } else {
+          setSavedAnalyses(data.map((row) => ({ ...row.data, id: row.id, note: row.notes })));
+        }
+        setSavedLoading(false);
+      });
+  };
+
   useEffect(() => {
     let ignore = false;
+    setSavedLoading(true);
+    setSavedLoadError(false);
     supabase
       .from("saved_products")
       .select("*")
       .order("created_at", { ascending: true })
       .then(({ data, error }) => {
-        if (!ignore && !error && data) {
+        if (ignore) return;
+        if (error || !data) {
+          setSavedLoadError(true);
+        } else {
           setSavedAnalyses(data.map((row) => ({ ...row.data, id: row.id, note: row.notes })));
         }
+        setSavedLoading(false);
       });
     return () => { ignore = true; };
   }, [user.id]);
@@ -2012,14 +2072,14 @@ function SmartSellDashboardApp({ user, signOut }) {
   };
 
   let content;
-  if (view === "dashboard") content = <Dashboard setView={setView} savedAnalyses={savedAnalyses} isMobile={isMobile} />;
+  if (view === "dashboard") content = <Dashboard setView={setView} savedAnalyses={savedAnalyses} loadError={savedLoadError} onRetry={loadSavedAnalyses} isMobile={isMobile} />;
   else if (view === "scan") content = isMobile ? <QuickScanView onAnalyse={handleAnalyse} user={user} initialName={scanSeed} /> : <ScanView onAnalyse={handleAnalyse} user={user} initialName={scanSeed} />;
   else if (view === "marketplace") content = <MarketplaceView user={user} onScanThis={(n) => { setScanSeed(n); setView("scan"); }} isMobile={isMobile} />;
   else if (view === "analysis" && analysis) content = <AnalysisView data={analysis} onBack={() => setView("scan")} onOpenSimulator={openSimulatorFromAnalysis} onSaveToComparison={saveToComparison} isMobile={isMobile} />;
   else if (view === "simulator") content = <SimulatorView seed={simSeed} isMobile={isMobile} />;
-  else if (view === "research") content = <ComparisonView savedAnalyses={savedAnalyses} isMobile={isMobile} />;
+  else if (view === "research") content = <ComparisonView savedAnalyses={savedAnalyses} loadError={savedLoadError} onRetry={loadSavedAnalyses} isMobile={isMobile} />;
   else if (view === "assistant") content = <AssistantView savedAnalyses={savedAnalyses} currentAnalysis={analysis} isMobile={isMobile} />;
-  else if (view === "watchlist") content = <WatchlistView savedAnalyses={savedAnalyses} onRemove={removeFromSaved} onSaveNote={saveNote} isMobile={isMobile} />;
+  else if (view === "watchlist") content = <WatchlistView savedAnalyses={savedAnalyses} onRemove={removeFromSaved} onSaveNote={saveNote} loadError={savedLoadError} onRetry={loadSavedAnalyses} isMobile={isMobile} />;
   else if (view === "more") content = <MoreMenuView setView={setView} />;
   else if (view === "settings") content = <AccountView user={user} signOut={signOut} savedAnalyses={savedAnalyses} onClearAll={clearAllSaved} isMobile={isMobile} />;
   else content = <Placeholder label={TITLES[view]} />;
@@ -2038,7 +2098,7 @@ function SmartSellDashboardApp({ user, signOut }) {
   return (
     <div style={{ display: "flex", height: "100vh", background: T.bg, fontFamily: "'Inter', sans-serif", color: T.ink }}>
       <style>{fontImport}</style>
-      <Sidebar view={view} setView={setView} />
+      <Sidebar view={view} setView={setView} savedCount={savedAnalyses.length} />
       <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
         <Topbar title={TITLES[view]} onScan={() => setView("scan")} />
         <div style={{ flex: 1, overflowY: "auto" }}>{content}</div>
