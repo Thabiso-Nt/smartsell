@@ -29,6 +29,23 @@ const COUNTRY_CURRENCY = {
   "Canada": { code: "CAD", symbol: "C$" },
   "Other": { code: "USD", symbol: "$" },
 };
+
+// Standard national consumption-tax rates (VAT/GST/sales tax), applied as a
+// simplified provision on the selling price. Real tax obligations vary by
+// product category, business registration status, and (in the US/Canada)
+// by state/province — these are national headline rates, not a substitute
+// for advice from a local tax professional or authority.
+const COUNTRY_TAX = {
+  "South Africa": { rate: 0.15, label: "VAT" },
+  "United States": { rate: 0, label: "Sales tax" },
+  "United Kingdom": { rate: 0.20, label: "VAT" },
+  "Nigeria": { rate: 0.075, label: "VAT" },
+  "Kenya": { rate: 0.16, label: "VAT" },
+  "Australia": { rate: 0.10, label: "GST" },
+  "Canada": { rate: 0.05, label: "GST" },
+  "Other": { rate: 0, label: "Tax" },
+};
+
 // Set once per render from the signed-in user's saved country (see
 // SmartSellDashboardApp). Defaults to Rand for anyone without one set yet.
 let CURRENCY_SYMBOL = "R";
@@ -118,15 +135,17 @@ const DEMO_CATALOGUE = [
 ];
 
 // ---- 4. Cost Engine: product-side costs + marketplace fees at a given price
-function buildCostBreakdown({ supplierPrice, marketplace, category, referencePrice }) {
+function buildCostBreakdown({ supplierPrice, marketplace, category, referencePrice, country }) {
   const cat = CATEGORY_PROFILES[category];
   const mp = MARKETPLACE_CONFIG[marketplace];
+  const tax = COUNTRY_TAX[country] || COUNTRY_TAX["Other"];
 
   const shipping = supplierPrice * cat.shippingPct;
   const importDuty = supplierPrice * cat.importDutyPct;
   const referral = referencePrice * mp.referralFeePct;
   const payment = referencePrice * mp.paymentFeePct;
   const returnAllowance = referencePrice * cat.returnRatePct;
+  const taxAmount = referencePrice * tax.rate;
 
   const lines = [
     { label: "Supplier / product cost", value: supplierPrice, source: "user" },
@@ -138,6 +157,7 @@ function buildCostBreakdown({ supplierPrice, marketplace, category, referencePri
     { label: `${marketplace} fulfilment fee (flat)`, value: mp.fulfilmentFee, source: "estimated" },
     { label: "Payment processing fee", value: payment, source: "estimated" },
     { label: `Return / replacement allowance (${(cat.returnRatePct * 100).toFixed(1)}% category avg.)`, value: returnAllowance, source: "estimated" },
+    ...(tax.rate > 0 ? [{ label: `${tax.label} (${(tax.rate * 100).toFixed(1)}% national rate, ${country})`, value: taxAmount, source: "estimated" }] : []),
   ];
   const total = lines.reduce((a, l) => a + l.value, 0);
   return { lines, total };
@@ -175,9 +195,9 @@ function buildPriceLadder({ totalCostAtAvgPrice, competitorStats }) {
 }
 
 // ---- 7. Profit analysis at the recommended selling price
-function buildProfitAnalysis({ supplierPrice, marketplace, category, priceLadder }) {
+function buildProfitAnalysis({ supplierPrice, marketplace, category, priceLadder, country }) {
   const sellingPrice = round5((priceLadder.recommendedLow + priceLadder.recommendedHigh) / 2);
-  const costBreakdown = buildCostBreakdown({ supplierPrice, marketplace, category, referencePrice: sellingPrice });
+  const costBreakdown = buildCostBreakdown({ supplierPrice, marketplace, category, referencePrice: sellingPrice, country });
   const profit = sellingPrice - costBreakdown.total;
   const margin = (profit / sellingPrice) * 100;
   return { sellingPrice, costBreakdown, profit, margin };
@@ -255,11 +275,11 @@ function recommendTestQuantity({ supplierPrice, safetyFactor, opportunity }) {
 }
 
 // ---- 11. Orchestrator — runs the full pipeline in the documented order
-function runSmartSellAnalysis({ productName, supplierPrice, marketplace, category }) {
+function runSmartSellAnalysis({ productName, supplierPrice, marketplace, category, country }) {
   const competitorStats = computeCompetitorStats(DEMO_CATALOGUE);
-  const refCost = buildCostBreakdown({ supplierPrice, marketplace, category, referencePrice: competitorStats.avg });
+  const refCost = buildCostBreakdown({ supplierPrice, marketplace, category, referencePrice: competitorStats.avg, country });
   const priceLadder = buildPriceLadder({ totalCostAtAvgPrice: refCost.total, competitorStats });
-  const profitAnalysis = buildProfitAnalysis({ supplierPrice, marketplace, category, priceLadder });
+  const profitAnalysis = buildProfitAnalysis({ supplierPrice, marketplace, category, priceLadder, country });
   const safetyFactor = computeSafetyFactor({
     supplierPrice, totalCost: profitAnalysis.costBreakdown.total, category, competitorStats, margin: profitAnalysis.margin,
   });
@@ -268,14 +288,14 @@ function runSmartSellAnalysis({ productName, supplierPrice, marketplace, categor
   });
   const testQuantity = recommendTestQuantity({ supplierPrice, safetyFactor, opportunity });
 
-  return { productName, supplierPrice, marketplace, category, competitorStats, priceLadder, profitAnalysis, safetyFactor, opportunity, testQuantity };
+  return { productName, supplierPrice, marketplace, category, country, competitorStats, priceLadder, profitAnalysis, safetyFactor, opportunity, testQuantity };
 }
 
 // ---- 12. Scenario Simulator — same engine functions, called on every input
 //          change instead of once on submit. No new formulas, no duplication.
-function simulateScenario({ supplierPrice, sellingPrice, marketplace, category, quantity }) {
+function simulateScenario({ supplierPrice, sellingPrice, marketplace, category, quantity, country }) {
   const competitorStats = computeCompetitorStats(DEMO_CATALOGUE);
-  const costBreakdown = buildCostBreakdown({ supplierPrice, marketplace, category, referencePrice: sellingPrice });
+  const costBreakdown = buildCostBreakdown({ supplierPrice, marketplace, category, referencePrice: sellingPrice, country });
   const profit = sellingPrice - costBreakdown.total;
   const margin = (profit / sellingPrice) * 100;
   const safetyFactor = computeSafetyFactor({ supplierPrice, totalCost: costBreakdown.total, category, competitorStats, margin });
@@ -565,7 +585,7 @@ function QuickScanView({ onAnalyse, user, initialName }) {
     setError("");
     setBusy(true);
     setTimeout(() => {
-      const result = runSmartSellAnalysis({ productName: name.trim() || "Scanned product", supplierPrice: toZAR(supplierPrice), marketplace, category });
+      const result = runSmartSellAnalysis({ productName: name.trim() || "Scanned product", supplierPrice: toZAR(supplierPrice), marketplace, category, country: user?.user_metadata?.country || "South Africa" });
       setBusy(false);
       onAnalyse(result);
     }, 1100);
@@ -651,7 +671,7 @@ function ScanView({ onAnalyse, user, initialName }) {
     setError("");
     setBusy(true);
     setTimeout(() => {
-      const result = runSmartSellAnalysis({ productName: name.trim(), supplierPrice: toZAR(supplierPrice), marketplace, category });
+      const result = runSmartSellAnalysis({ productName: name.trim(), supplierPrice: toZAR(supplierPrice), marketplace, category, country: user?.user_metadata?.country || "South Africa" });
       setBusy(false);
       onAnalyse(result);
     }, 1100);
@@ -781,11 +801,11 @@ function AnalysisView({ data, onBack, onOpenSimulator, onSaveToComparison, isMob
 
       <Card style={{ display: "flex", flexDirection: isMobile ? "column" : "row", alignItems: isMobile ? "flex-start" : "center", gap: isMobile ? 14 : 0, justifyContent: "space-between" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 16 }}>
-          <div style={{ width: 60, height: 60, borderRadius: 16, background: T.panel3, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 26 }}>🧴</div>
+          <div style={{ width: 60, height: 60, borderRadius: 16, background: T.panel3, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 26 }}>📦</div>
           <div>
             <div style={{ fontSize: 17, fontWeight: 600, color: T.ink, fontFamily: "'Space Grotesk', sans-serif" }}>{productName}</div>
             <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 6 }}>
-              <Pill color={T.lime} border={`1px solid ${T.lime}55`} bg="rgba(198,255,61,0.08)">94% match · Exact / near-exact (demo AI)</Pill>
+              <Pill color={T.blue}>Manually entered — no AI photo match performed</Pill>
               <Pill color={T.blue}>{marketplace}</Pill>
             </div>
           </div>
@@ -793,6 +813,15 @@ function AnalysisView({ data, onBack, onOpenSimulator, onSaveToComparison, isMob
         <div style={{ textAlign: "right" }}>
           <div style={{ fontSize: 11.5, color: T.faint, marginBottom: 6 }}>Final decision</div>
           <DecisionBadge decision={opportunity.decision} size="lg" />
+        </div>
+      </Card>
+
+      <Card style={{ background: "rgba(255,110,110,0.08)", border: `1px solid ${T.coral}55` }}>
+        <div style={{ display: "flex", gap: 9 }}>
+          <AlertTriangle size={16} color={T.coral} style={{ flexShrink: 0, marginTop: 1 }} />
+          <div style={{ fontSize: 12.5, color: T.ink, lineHeight: 1.6 }}>
+            <strong>Important:</strong> there's no live marketplace search connected yet. The matching catalogue and every competitor price below are a fixed demo example (a water bottle listing), not real results for "{productName}". The Opportunity Score, Safety Factor and recommended price all depend on that competitor data, so <strong>none of the numbers below are meaningful for this specific product</strong> — they only demonstrate how the engine works once real search is connected.
+          </div>
         </div>
       </Card>
 
@@ -895,7 +924,15 @@ function AnalysisView({ data, onBack, onOpenSimulator, onSaveToComparison, isMob
 
       <Card>
         <SectionTitle icon={Package} title="True cost / landed cost breakdown" tag={<Pill color={T.amber}>Selling price used: {fmtR(profitAnalysis.sellingPrice)}</Pill>} />
-        <div style={{ fontSize: 11, color: T.faint, marginBottom: 10 }}>No live marketplace fee connector is active — every line below is a calculated estimate from a configurable rate table, not a live-verified fee.</div>
+        <div style={{ fontSize: 11, color: T.faint, marginBottom: 10 }}>
+          No live marketplace fee connector is active — every line below is a calculated estimate from a configurable rate table, not a live-verified fee.
+          {data.country && (COUNTRY_TAX[data.country] || COUNTRY_TAX["Other"]).rate > 0 && (
+            <> Tax is included using {data.country}'s national {(COUNTRY_TAX[data.country] || COUNTRY_TAX["Other"]).label} rate of {((COUNTRY_TAX[data.country] || COUNTRY_TAX["Other"]).rate * 100).toFixed(1)}% — your actual obligation may differ by category, registration status, or region. Confirm with a local tax professional.</>
+          )}
+          {data.country && (COUNTRY_TAX[data.country] || COUNTRY_TAX["Other"]).rate === 0 && (
+            <> No national tax rate is configured for {data.country} yet, so tax isn't included below — check your local requirements separately.</>
+          )}
+        </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           {profitAnalysis.costBreakdown.lines.map((c) => (
             <div key={c.label} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "9px 4px", borderBottom: `1px solid ${T.line}` }}>
@@ -983,14 +1020,14 @@ function SliderRow({ label, value, onChange, min, max, step, format }) {
   );
 }
 
-function SimulatorView({ seed, isMobile }) {
+function SimulatorView({ seed, user, isMobile }) {
   const [supplierPrice, setSupplierPrice] = useState(seed?.supplierPrice ?? 200);
   const [sellingPrice, setSellingPrice] = useState(seed?.sellingPrice ?? 480);
   const [marketplace, setMarketplace] = useState(seed?.marketplace ?? "Takealot");
   const [category, setCategory] = useState(seed?.category ?? "Home & Kitchen");
   const [quantity, setQuantity] = useState(5);
 
-  const result = simulateScenario({ supplierPrice: toZAR(supplierPrice), sellingPrice: toZAR(sellingPrice), marketplace, category, quantity });
+  const result = simulateScenario({ supplierPrice: toZAR(supplierPrice), sellingPrice: toZAR(sellingPrice), marketplace, category, quantity, country: user?.user_metadata?.country || "South Africa" });
   const { profit, margin, safetyFactor, opportunity, competitorStats, costBreakdown, totalProfit, capitalExposure } = result;
 
   return (
@@ -2076,7 +2113,7 @@ function SmartSellDashboardApp({ user, signOut }) {
   else if (view === "scan") content = isMobile ? <QuickScanView onAnalyse={handleAnalyse} user={user} initialName={scanSeed} /> : <ScanView onAnalyse={handleAnalyse} user={user} initialName={scanSeed} />;
   else if (view === "marketplace") content = <MarketplaceView user={user} onScanThis={(n) => { setScanSeed(n); setView("scan"); }} isMobile={isMobile} />;
   else if (view === "analysis" && analysis) content = <AnalysisView data={analysis} onBack={() => setView("scan")} onOpenSimulator={openSimulatorFromAnalysis} onSaveToComparison={saveToComparison} isMobile={isMobile} />;
-  else if (view === "simulator") content = <SimulatorView seed={simSeed} isMobile={isMobile} />;
+  else if (view === "simulator") content = <SimulatorView seed={simSeed} user={user} isMobile={isMobile} />;
   else if (view === "research") content = <ComparisonView savedAnalyses={savedAnalyses} loadError={savedLoadError} onRetry={loadSavedAnalyses} isMobile={isMobile} />;
   else if (view === "assistant") content = <AssistantView savedAnalyses={savedAnalyses} currentAnalysis={analysis} isMobile={isMobile} />;
   else if (view === "watchlist") content = <WatchlistView savedAnalyses={savedAnalyses} onRemove={removeFromSaved} onSaveNote={saveNote} loadError={savedLoadError} onRetry={loadSavedAnalyses} isMobile={isMobile} />;
