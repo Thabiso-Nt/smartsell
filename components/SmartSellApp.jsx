@@ -314,7 +314,8 @@ const NAV = [
   { id: "dashboard", label: "Dashboard", icon: LayoutGrid },
   { id: "scan", label: "Scan Product", icon: ScanLine },
   { id: "research", label: "Product Research", icon: Search },
-  { id: "marketplace", label: "Marketplace", icon: Store },
+  { id: "marketplace", label: "Trending Products", icon: TrendingUp },
+  { id: "channels", label: "Sales Channels", icon: Store },
   { id: "watchlist", label: "Watchlist", icon: Bookmark },
   { id: "simulator", label: "Profit Simulator", icon: LineChart },
   { id: "assistant", label: "AI Assistant", icon: Bot },
@@ -463,7 +464,7 @@ function MobileBottomNav({ view, setView }) {
     { id: "watchlist", label: "Watchlist", icon: Bookmark },
     { id: "more", label: "More", icon: MoreHorizontal },
   ];
-  const MORE_VIEWS = ["more", "marketplace", "assistant", "settings"];
+  const MORE_VIEWS = ["more", "marketplace", "channels", "assistant", "settings"];
   return (
     <div style={{ height: 74, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "space-around", borderTop: `1px solid ${T.line}`, background: T.panel }}>
       {items.map((it) => {
@@ -1636,6 +1637,197 @@ const TRENDING_PLATFORMS = {
   Other: { color: T.faint },
 };
 
+/* ============================================================================
+   SALES CHANNELS — real marketplace connections. Each seller connects their
+   OWN account; credentials are tested live before ever being saved, and used
+   only server-side to pull that seller's real data. Adding a new marketplace
+   means adding one entry to CONNECTOR_FIELDS + the backend _connectors.js —
+   nothing else here needs to change.
+   ============================================================================ */
+const CONNECTOR_FIELDS = {
+  woocommerce: {
+    displayName: "WooCommerce",
+    help: "In your WordPress admin: WooCommerce → Settings → Advanced → REST API → Add key (set permissions to Read).",
+    fields: [
+      { key: "store_url", label: "Store URL", placeholder: "https://yourstore.com" },
+      { key: "consumer_key", label: "Consumer Key", placeholder: "ck_..." },
+      { key: "consumer_secret", label: "Consumer Secret", placeholder: "cs_..." },
+    ],
+  },
+  takealot: {
+    displayName: "Takealot",
+    help: "In your Takealot Seller Portal: API Integration → Seller API → generate a key. Requires an approved Takealot seller account.",
+    fields: [{ key: "api_key", label: "API Key", placeholder: "Paste your Takealot Seller API key" }],
+  },
+};
+const CHANNELS_COMING_SOON = ["Amazon", "eBay", "Shopify", "Makro", "Bob Shop", "Mercado Libre", "Etsy"];
+
+function SalesChannelsView({ user, isMobile }) {
+  const [connections, setConnections] = useState({});
+  const [loading, setLoading] = useState(true);
+  const [openForm, setOpenForm] = useState(null);
+  const [formValues, setFormValues] = useState({});
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [orders, setOrders] = useState({});
+  const [ordersLoadingId, setOrdersLoadingId] = useState(null);
+
+  const loadConnections = async () => {
+    setLoading(true);
+    const { data } = await supabase.from("marketplace_connections").select("marketplace_id, status, connected_at");
+    const map = {};
+    (data || []).forEach((c) => { map[c.marketplace_id] = c; });
+    setConnections(map);
+    setLoading(false);
+  };
+
+  useEffect(() => { loadConnections(); }, [user.id]);
+
+  const authHeader = async () => {
+    const { data } = await supabase.auth.getSession();
+    return { Authorization: `Bearer ${data.session?.access_token}` };
+  };
+
+  const connect = async (marketplaceId) => {
+    setBusy(true); setError("");
+    try {
+      const res = await fetch("/api/marketplaces/connect", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...(await authHeader()) },
+        body: JSON.stringify({ marketplaceId, credentials: formValues }),
+      });
+      const result = await res.json();
+      if (!res.ok || result.error) throw new Error(result.error || "Connection failed.");
+      setOpenForm(null);
+      setFormValues({});
+      await loadConnections();
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const disconnect = async (marketplaceId) => {
+    await supabase.from("marketplace_connections").delete().eq("marketplace_id", marketplaceId);
+    setOrders((prev) => { const next = { ...prev }; delete next[marketplaceId]; return next; });
+    await loadConnections();
+  };
+
+  const loadOrders = async (marketplaceId) => {
+    setOrdersLoadingId(marketplaceId);
+    try {
+      const res = await fetch(`/api/marketplaces/orders?marketplaceId=${marketplaceId}`, { headers: await authHeader() });
+      const result = await res.json();
+      if (!res.ok || result.error) throw new Error(result.error || "Couldn't fetch orders.");
+      setOrders((prev) => ({ ...prev, [marketplaceId]: { list: result.orders } }));
+    } catch (e) {
+      setOrders((prev) => ({ ...prev, [marketplaceId]: { error: e.message } }));
+    } finally {
+      setOrdersLoadingId(null);
+    }
+  };
+
+  return (
+    <div style={{ padding: isMobile ? 16 : 28, display: "flex", flexDirection: "column", gap: 16 }}>
+      <Card style={{ background: "rgba(110,168,254,0.06)", border: `1px solid ${T.blue}33` }}>
+        <div style={{ display: "flex", gap: 9 }}>
+          <Info size={16} color={T.blue} style={{ flexShrink: 0, marginTop: 1 }} />
+          <div style={{ fontSize: 12, color: T.sub, lineHeight: 1.6 }}>
+            Connect your own seller account for each marketplace — SmartSell never uses shared or borrowed credentials. Your API keys are tested live before being saved, and are only ever used to fetch your own data.
+          </div>
+        </div>
+      </Card>
+
+      {Object.entries(CONNECTOR_FIELDS).map(([id, def]) => {
+        const conn = connections[id];
+        const isOpen = openForm === id;
+        const orderState = orders[id];
+        return (
+          <Card key={id}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: conn || isOpen ? 14 : 0 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <div style={{ width: 38, height: 38, borderRadius: 10, background: T.panel3, display: "flex", alignItems: "center", justifyContent: "center" }}>
+                  <Store size={17} color={T.lime} />
+                </div>
+                <div>
+                  <div style={{ fontSize: 14.5, fontWeight: 600, color: T.ink }}>{def.displayName}</div>
+                  {conn ? (
+                    <div style={{ fontSize: 11.5, color: T.lime, marginTop: 2 }}>Connected {new Date(conn.connected_at).toLocaleDateString()}</div>
+                  ) : (
+                    <div style={{ fontSize: 11.5, color: T.faint, marginTop: 2 }}>Not connected</div>
+                  )}
+                </div>
+              </div>
+              {conn ? (
+                <button onClick={() => disconnect(id)} style={{ background: "none", border: `1px solid ${T.line}`, color: T.coral, fontSize: 12, fontWeight: 600, cursor: "pointer", padding: "7px 14px", borderRadius: 9 }}>
+                  Disconnect
+                </button>
+              ) : (
+                <button onClick={() => { setOpenForm(isOpen ? null : id); setError(""); }} style={{ background: T.lime, color: "#0A0E17", border: "none", fontSize: 12, fontWeight: 700, cursor: "pointer", padding: "8px 16px", borderRadius: 9 }}>
+                  {isOpen ? "Cancel" : "Connect"}
+                </button>
+              )}
+            </div>
+
+            {isOpen && !conn && (
+              <div>
+                <div style={{ fontSize: 11.5, color: T.faint, marginBottom: 12 }}>{def.help}</div>
+                {def.fields.map((f) => (
+                  <input
+                    key={f.key}
+                    placeholder={f.placeholder}
+                    value={formValues[f.key] || ""}
+                    onChange={(e) => setFormValues((prev) => ({ ...prev, [f.key]: e.target.value }))}
+                    style={{ width: "100%", background: T.panel3, border: `1px solid ${T.line}`, borderRadius: 11, padding: "10px 14px", color: T.ink, fontSize: 13, marginBottom: 10, boxSizing: "border-box" }}
+                  />
+                ))}
+                {error && <div style={{ marginBottom: 10, padding: "9px 12px", background: "rgba(255,110,110,0.08)", border: `1px solid ${T.coral}44`, borderRadius: 10, color: T.coral, fontSize: 12 }}>{error}</div>}
+                <button onClick={() => connect(id)} disabled={busy} style={{ background: T.lime, color: "#0A0E17", border: "none", borderRadius: 10, padding: "9px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer", opacity: busy ? 0.7 : 1 }}>
+                  {busy ? "Testing connection…" : "Test & Connect"}
+                </button>
+              </div>
+            )}
+
+            {conn && (
+              <div>
+                <button onClick={() => loadOrders(id)} disabled={ordersLoadingId === id} style={{ background: T.panel3, border: `1px solid ${T.line}`, color: T.ink, fontSize: 12.5, fontWeight: 600, cursor: "pointer", padding: "8px 14px", borderRadius: 9, marginBottom: orderState ? 12 : 0 }}>
+                  {ordersLoadingId === id ? "Loading…" : "Load recent orders"}
+                </button>
+                {orderState?.error && (
+                  <div style={{ padding: "9px 12px", background: "rgba(255,110,110,0.08)", border: `1px solid ${T.coral}44`, borderRadius: 10, color: T.coral, fontSize: 12 }}>{orderState.error}</div>
+                )}
+                {orderState?.list && (
+                  orderState.list.length === 0 ? (
+                    <div style={{ fontSize: 12.5, color: T.faint }}>No recent orders found.</div>
+                  ) : (
+                    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                      {orderState.list.map((o) => (
+                        <div key={o.id} style={{ display: "flex", justifyContent: "space-between", padding: "9px 12px", background: T.panel3, borderRadius: 10, fontSize: 12.5 }}>
+                          <span style={{ color: T.ink }}>#{o.number || o.id} · {o.status}</span>
+                          <span style={{ color: T.sub }}>{o.total} {o.currency}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )
+                )}
+              </div>
+            )}
+          </Card>
+        );
+      })}
+
+      <Card>
+        <SectionTitle icon={Store} title="Coming soon" />
+        <div style={{ fontSize: 11.5, color: T.faint, marginBottom: 12 }}>These need either a formal developer application (Amazon, Walmart) or additional setup on our side (OAuth for Shopify/eBay). Nothing here is faked — they're simply not built yet.</div>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+          {CHANNELS_COMING_SOON.map((m) => <Pill key={m}>{m}</Pill>)}
+        </div>
+      </Card>
+    </div>
+  );
+}
+
 function MarketplaceView({ user, onScanThis, isMobile }) {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -1742,7 +1934,8 @@ function MarketplaceView({ user, onScanThis, isMobile }) {
    ============================================================================ */
 function MoreMenuView({ setView }) {
   const items = [
-    { id: "marketplace", label: "Marketplace", desc: "Your trending products list", icon: Store },
+    { id: "marketplace", label: "Trending Products", desc: "Your manual trending list", icon: TrendingUp },
+    { id: "channels", label: "Sales Channels", desc: "Connect your marketplace accounts", icon: Store },
     { id: "simulator", label: "Profit Simulator", desc: "Adjust price, cost & quantity live", icon: LineChart },
     { id: "assistant", label: "AI Assistant", desc: "Ask about your saved products", icon: Bot },
     { id: "settings", label: "Settings", desc: "Account, region, scan defaults", icon: Settings },
@@ -1784,7 +1977,7 @@ function Placeholder({ label }) {
 /* ============================================================================
    APP
    ============================================================================ */
-const TITLES = { dashboard: "Overview", scan: "Scan Product", analysis: "Product Analysis", research: "Product Research", marketplace: "Marketplace Analysis", watchlist: "Watchlist", simulator: "Profit Simulator", assistant: "AI Assistant", settings: "Settings", more: "More" };
+const TITLES = { dashboard: "Overview", scan: "Scan Product", analysis: "Product Analysis", research: "Product Research", marketplace: "Marketplace Analysis", channels: "Sales Channels", watchlist: "Watchlist", simulator: "Profit Simulator", assistant: "AI Assistant", settings: "Settings", more: "More" };
 
 /* ============================================================================
    AUTH GATE — real login/signup with Supabase, same visual style.
@@ -2112,6 +2305,7 @@ function SmartSellDashboardApp({ user, signOut }) {
   if (view === "dashboard") content = <Dashboard setView={setView} savedAnalyses={savedAnalyses} loadError={savedLoadError} onRetry={loadSavedAnalyses} isMobile={isMobile} />;
   else if (view === "scan") content = isMobile ? <QuickScanView onAnalyse={handleAnalyse} user={user} initialName={scanSeed} /> : <ScanView onAnalyse={handleAnalyse} user={user} initialName={scanSeed} />;
   else if (view === "marketplace") content = <MarketplaceView user={user} onScanThis={(n) => { setScanSeed(n); setView("scan"); }} isMobile={isMobile} />;
+  else if (view === "channels") content = <SalesChannelsView user={user} isMobile={isMobile} />;
   else if (view === "analysis" && analysis) content = <AnalysisView data={analysis} onBack={() => setView("scan")} onOpenSimulator={openSimulatorFromAnalysis} onSaveToComparison={saveToComparison} isMobile={isMobile} />;
   else if (view === "simulator") content = <SimulatorView seed={simSeed} user={user} isMobile={isMobile} />;
   else if (view === "research") content = <ComparisonView savedAnalyses={savedAnalyses} loadError={savedLoadError} onRetry={loadSavedAnalyses} isMobile={isMobile} />;
