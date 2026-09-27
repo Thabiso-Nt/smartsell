@@ -1648,6 +1648,16 @@ const CONNECTOR_FIELDS = {
   woocommerce: {
     displayName: "WooCommerce",
     help: "In your WordPress admin: WooCommerce → Settings → Advanced → REST API → Add key (set permissions to Read).",
+    helpSteps: [
+      "Log in to your WordPress admin dashboard (usually yourstore.com/wp-admin).",
+      "Go to WooCommerce → Settings → Advanced → REST API.",
+      "Click \"Add key\".",
+      "Give it a description (e.g. \"SmartSell\"), pick your user, and set Permissions to \"Read\".",
+      "Click \"Generate API key\".",
+      "Copy the Consumer Key and Consumer Secret shown — WooCommerce only shows the secret once, so copy it now.",
+      "Your Store URL is just your website address, e.g. https://yourstore.com.",
+      "Paste all three into the fields above and click \"Test & Connect\".",
+    ],
     fields: [
       { key: "store_url", label: "Store URL", placeholder: "https://yourstore.com" },
       { key: "consumer_key", label: "Consumer Key", placeholder: "ck_..." },
@@ -1657,8 +1667,26 @@ const CONNECTOR_FIELDS = {
   takealot: {
     displayName: "Takealot",
     help: "In your Takealot Seller Portal: API Integration → Seller API → generate a key. Requires an approved Takealot seller account.",
+    helpSteps: [
+      "You need an approved, active Takealot seller account first — this isn't available until Takealot approves your seller application.",
+      "Log in to your Takealot Seller Portal at seller.takealot.com.",
+      "Look for \"API Integration\" (sometimes listed under Settings or Account).",
+      "Find \"Seller API\" and generate a new API key.",
+      "Copy the key Takealot gives you.",
+      "Paste it into the field above and click \"Test & Connect\".",
+    ],
     fields: [{ key: "api_key", label: "API Key", placeholder: "Paste your Takealot Seller API key" }],
   },
+};
+
+const COMING_SOON_INFO = {
+  "Amazon": "Requires a formal application through Amazon's Selling Partner API program: identity verification, a public website describing SmartSell, and agreeing to Amazon's data policies. No sales history needed, but it's a real review process, not instant self-serve.",
+  "eBay": "eBay offers a free, self-serve developer account (developer.ebay.com) — this connector just hasn't been built yet on our side.",
+  "Shopify": "Shopify offers a free Partner account that lets store owners install an app via OAuth — self-serve on Shopify's side, this connector just hasn't been built yet on our side.",
+  "Makro": "No public self-serve developer API has been confirmed yet — would require contacting Makro directly to ask about integration options.",
+  "Bob Shop": "No public self-serve developer API has been confirmed yet — would require contacting Bob Shop directly to ask about integration options.",
+  "Mercado Libre": "Mercado Libre has a developer platform, but exact current access requirements for this app haven't been confirmed yet.",
+  "Etsy": "Etsy has a developer platform, but exact current access requirements for this app haven't been confirmed yet.",
 };
 const CHANNELS_COMING_SOON = ["Amazon", "eBay", "Shopify", "Makro", "Bob Shop", "Mercado Libre", "Etsy"];
 
@@ -1666,6 +1694,8 @@ function SalesChannelsView({ user, isMobile }) {
   const [connections, setConnections] = useState({});
   const [loading, setLoading] = useState(true);
   const [openForm, setOpenForm] = useState(null);
+  const [openHelp, setOpenHelp] = useState(null);
+  const [openComingSoon, setOpenComingSoon] = useState(null);
   const [formValues, setFormValues] = useState({});
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -1764,11 +1794,26 @@ function SalesChannelsView({ user, isMobile }) {
                   Disconnect
                 </button>
               ) : (
-                <button onClick={() => { setOpenForm(isOpen ? null : id); setError(""); }} style={{ background: T.lime, color: "#0A0E17", border: "none", fontSize: 12, fontWeight: 700, cursor: "pointer", padding: "8px 16px", borderRadius: 9 }}>
-                  {isOpen ? "Cancel" : "Connect"}
-                </button>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button onClick={() => setOpenHelp(openHelp === id ? null : id)} style={{ background: "none", border: `1px solid ${T.line}`, color: T.blue, fontSize: 12, fontWeight: 600, cursor: "pointer", padding: "7px 14px", borderRadius: 9, display: "flex", alignItems: "center", gap: 6 }}>
+                    <Info size={13} /> How to connect
+                  </button>
+                  <button onClick={() => { setOpenForm(isOpen ? null : id); setError(""); }} style={{ background: T.lime, color: "#0A0E17", border: "none", fontSize: 12, fontWeight: 700, cursor: "pointer", padding: "8px 16px", borderRadius: 9 }}>
+                    {isOpen ? "Cancel" : "Connect"}
+                  </button>
+                </div>
               )}
             </div>
+
+            {openHelp === id && !conn && (
+              <div style={{ marginBottom: 14, padding: "12px 14px", background: T.panel3, borderRadius: 12 }}>
+                <ol style={{ margin: 0, paddingLeft: 18, display: "flex", flexDirection: "column", gap: 8 }}>
+                  {def.helpSteps.map((step, i) => (
+                    <li key={i} style={{ fontSize: 12.5, color: T.sub, lineHeight: 1.5 }}>{step}</li>
+                  ))}
+                </ol>
+              </div>
+            )}
 
             {isOpen && !conn && (
               <div>
@@ -1819,10 +1864,23 @@ function SalesChannelsView({ user, isMobile }) {
 
       <Card>
         <SectionTitle icon={Store} title="Coming soon" />
-        <div style={{ fontSize: 11.5, color: T.faint, marginBottom: 12 }}>These need either a formal developer application (Amazon, Walmart) or additional setup on our side (OAuth for Shopify/eBay). Nothing here is faked — they're simply not built yet.</div>
+        <div style={{ fontSize: 11.5, color: T.faint, marginBottom: 12 }}>Tap one to see what's actually involved. Nothing here is faked — they're simply not built yet.</div>
         <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-          {CHANNELS_COMING_SOON.map((m) => <Pill key={m}>{m}</Pill>)}
+          {CHANNELS_COMING_SOON.map((m) => (
+            <button
+              key={m}
+              onClick={() => setOpenComingSoon(openComingSoon === m ? null : m)}
+              style={{ background: openComingSoon === m ? T.panel3 : "transparent", border: `1px solid ${T.line}`, color: T.sub, fontSize: 11.5, fontWeight: 600, padding: "4px 10px", borderRadius: 999, cursor: "pointer" }}
+            >
+              {m}
+            </button>
+          ))}
         </div>
+        {openComingSoon && (
+          <div style={{ marginTop: 12, padding: "12px 14px", background: T.panel3, borderRadius: 12, fontSize: 12.5, color: T.sub, lineHeight: 1.6 }}>
+            <strong style={{ color: T.ink }}>{openComingSoon}:</strong> {COMING_SOON_INFO[openComingSoon]}
+          </div>
+        )}
       </Card>
     </div>
   );
