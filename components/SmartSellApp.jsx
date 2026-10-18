@@ -1658,11 +1658,26 @@ const CONNECTOR_FIELDS = {
       "Your Store URL is just your website address, e.g. https://yourstore.com.",
       "Paste all three into the fields above and click \"Test & Connect\".",
     ],
+    links: [{ label: "WooCommerce REST API guide", url: "https://woocommerce.com/document/woocommerce-rest-api/" }],
     fields: [
       { key: "store_url", label: "Store URL", placeholder: "https://yourstore.com" },
       { key: "consumer_key", label: "Consumer Key", placeholder: "ck_..." },
       { key: "consumer_secret", label: "Consumer Secret", placeholder: "cs_..." },
     ],
+  },
+  mercadolibre: {
+    displayName: "Mercado Libre",
+    oauth: true,
+    help: "You'll be sent to Mercado Libre to log in and approve access to your own seller account. SmartSell never sees your password.",
+    helpSteps: [
+      "You need a Mercado Libre seller account on the national site you sell on (Argentina, Brazil, Mexico, Colombia, Chile, Uruguay or Peru).",
+      "Pick that country's Mercado Libre site from the dropdown.",
+      "Click \"Connect with Mercado Libre\" — you'll be taken to Mercado Libre's own login page.",
+      "Log in and approve SmartSell's request to read your account.",
+      "You'll be sent back to SmartSell automatically, now connected.",
+    ],
+    links: [{ label: "Mercado Libre developers", url: "https://developers.mercadolibre.com.ar/en_us/register-your-application" }],
+    fields: [],
   },
   takealot: {
     displayName: "Takealot",
@@ -1675,22 +1690,50 @@ const CONNECTOR_FIELDS = {
       "Copy the key Takealot gives you.",
       "Paste it into the field above and click \"Test & Connect\".",
     ],
+    links: [{ label: "Open Takealot Seller Portal", url: "https://seller.takealot.com" }],
     fields: [{ key: "api_key", label: "API Key", placeholder: "Paste your Takealot Seller API key" }],
   },
 };
 
 const COMING_SOON_INFO = {
-  "Amazon": "Requires a formal application through Amazon's Selling Partner API program: identity verification, a public website describing SmartSell, and agreeing to Amazon's data policies. No sales history needed, but it's a real review process, not instant self-serve.",
-  "eBay": "eBay offers a free, self-serve developer account (developer.ebay.com) — this connector just hasn't been built yet on our side.",
-  "Shopify": "Shopify offers a free Partner account that lets store owners install an app via OAuth — self-serve on Shopify's side, this connector just hasn't been built yet on our side.",
-  "Makro": "No public self-serve developer API has been confirmed yet — would require contacting Makro directly to ask about integration options.",
-  "Bob Shop": "No public self-serve developer API has been confirmed yet — would require contacting Bob Shop directly to ask about integration options.",
-  "Mercado Libre": "Mercado Libre has a developer platform, but exact current access requirements for this app haven't been confirmed yet.",
-  "Etsy": "Etsy has a developer platform, but exact current access requirements for this app haven't been confirmed yet.",
+  "Amazon": {
+    text: "Requires a formal application through Amazon's Selling Partner API program: identity verification, a public website describing SmartSell, and agreeing to Amazon's data policies. No sales history needed, but it's a real review process, not instant self-serve.",
+    links: [{ label: "Amazon SP-API developer docs", url: "https://developer-docs.amazon.com/sp-api" }],
+  },
+  "eBay": {
+    text: "eBay offers a free, self-serve developer account. Sellers would connect through OAuth, and that connector hasn't been built on our side yet.",
+    links: [{ label: "eBay Developer Program", url: "https://developer.ebay.com" }],
+  },
+  "Shopify": {
+    text: "Shopify offers a free Partner account for building an app that store owners install via OAuth. Self-serve on Shopify's side; the connector hasn't been built on our side yet.",
+    links: [{ label: "Shopify Partners", url: "https://partners.shopify.com" }],
+  },
+  "Makro": {
+    text: "Makro South Africa does offer a seller API (sellers generate credentials in their own Makro seller portal, and tools like TSeller already connect this way), but its developer documentation isn't publicly published. We won't guess at it. Check your Makro seller portal for API access details; with the documentation we can build this connector accurately. Note: the METRO/MAKRO developer portal you may find online belongs to the separate European marketplace, not Makro South Africa.",
+    links: [{ label: "Makro South Africa", url: "https://www.makro.co.za" }],
+  },
+  "Bob Shop": {
+    text: "We couldn't find any official way for third-party apps to read a seller's listings or orders. Bob Shop supports one-way product feeds from a shopping cart into Bob Shop, which is a different thing. We won't scrape it, so this one isn't currently possible.",
+    links: [
+      { label: "Bob Shop", url: "https://www.bobshop.co.za" },
+      { label: "Bob Shop: e-commerce feed integration", url: "https://www.bobshop.co.za/article/2782/Integrate_Your_E_commerce_with_Bob_Shop" },
+    ],
+  },
+  "Mercado Libre": {
+    text: "Self-serve: create a free developer application (the developer portal is country-specific). Uses OAuth. Mercado Libre's docs ask integrators to use one application for all sellers, which matches SmartSell's model, and require access tokens to be encrypted at rest (AES-256). We need to build that secure token storage, plus the OAuth connect flow, before this can go live.",
+    links: [{ label: "Register a Mercado Libre application", url: "https://developers.mercadolibre.com.ar/en_us/register-your-application" }],
+  },
+  "Etsy": {
+    text: "Self-serve: create a free developer app in Etsy's developer portal. Uses OAuth (the seller clicks 'Connect with Etsy' and approves access), so it needs an OAuth callback and secure token handling on our side. A personal developer key covers up to 5 shops; serving many sellers requires applying for Etsy's 'Commercial Access'.",
+    links: [{ label: "Etsy developer apps", url: "https://www.etsy.com/developers/your-apps" }],
+  },
 };
-const CHANNELS_COMING_SOON = ["Amazon", "eBay", "Shopify", "Makro", "Bob Shop", "Mercado Libre", "Etsy"];
+const CHANNELS_COMING_SOON = ["Amazon", "eBay", "Shopify", "Makro", "Bob Shop", "Etsy"];
 
-function SalesChannelsView({ user, isMobile }) {
+const ML_SITE_OPTIONS = ["Argentina", "Brazil", "Mexico", "Colombia", "Chile", "Uruguay", "Peru"];
+
+function SalesChannelsView({ user, isMobile, notice }) {
+  const [mlSite, setMlSite] = useState("Argentina");
   const [connections, setConnections] = useState({});
   const [loading, setLoading] = useState(true);
   const [openForm, setOpenForm] = useState(null);
@@ -1738,6 +1781,19 @@ function SalesChannelsView({ user, isMobile }) {
     }
   };
 
+  const startOAuth = async (marketplaceId) => {
+    setBusy(true); setError("");
+    try {
+      const res = await fetch(`/api/oauth/${marketplaceId}/start?site=${encodeURIComponent(mlSite)}`, { headers: await authHeader() });
+      const result = await res.json();
+      if (!res.ok || result.error) throw new Error(result.error || "Couldn't start the connection.");
+      window.location.href = result.authUrl; // off to the marketplace's own login page
+    } catch (e) {
+      setError(e.message);
+      setBusy(false);
+    }
+  };
+
   const disconnect = async (marketplaceId) => {
     await supabase.from("marketplace_connections").delete().eq("marketplace_id", marketplaceId);
     setOrders((prev) => { const next = { ...prev }; delete next[marketplaceId]; return next; });
@@ -1764,10 +1820,16 @@ function SalesChannelsView({ user, isMobile }) {
         <div style={{ display: "flex", gap: 9 }}>
           <Info size={16} color={T.blue} style={{ flexShrink: 0, marginTop: 1 }} />
           <div style={{ fontSize: 12, color: T.sub, lineHeight: 1.6 }}>
-            Connect your own seller account for each marketplace — SmartSell never uses shared or borrowed credentials. Your API keys are tested live before being saved, and are only ever used to fetch your own data.
+            Connect your own seller account for each marketplace — SmartSell never uses shared or borrowed credentials. Keys and tokens are tested live before being saved, stored encrypted, and only ever used to fetch your own data.
           </div>
         </div>
       </Card>
+
+      {notice && (
+        <Card style={{ background: notice.ok ? "rgba(198,255,61,0.08)" : "rgba(255,110,110,0.08)", border: `1px solid ${(notice.ok ? T.lime : T.coral)}44` }}>
+          <div style={{ fontSize: 12.5, color: notice.ok ? T.lime : T.coral }}>{notice.text}</div>
+        </Card>
+      )}
 
       {Object.entries(CONNECTOR_FIELDS).map(([id, def]) => {
         const conn = connections[id];
@@ -1812,12 +1874,26 @@ function SalesChannelsView({ user, isMobile }) {
                     <li key={i} style={{ fontSize: 12.5, color: T.sub, lineHeight: 1.5 }}>{step}</li>
                   ))}
                 </ol>
+                {def.links && (
+                  <div style={{ marginTop: 12, display: "flex", flexWrap: "wrap", gap: 14 }}>
+                    {def.links.map((l) => (
+                      <a key={l.url} href={l.url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, color: T.blue, textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 5 }}>
+                        <ExternalLink size={12} /> {l.label}
+                      </a>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
 
             {isOpen && !conn && (
               <div>
                 <div style={{ fontSize: 11.5, color: T.faint, marginBottom: 12 }}>{def.help}</div>
+                {def.oauth && (
+                  <select value={mlSite} onChange={(e) => setMlSite(e.target.value)} style={{ width: "100%", background: T.panel3, border: `1px solid ${T.line}`, borderRadius: 11, padding: "10px 14px", color: T.ink, fontSize: 13, marginBottom: 10, boxSizing: "border-box" }}>
+                    {ML_SITE_OPTIONS.map((c) => <option key={c} value={c}>Mercado Libre {c}</option>)}
+                  </select>
+                )}
                 {def.fields.map((f) => (
                   <input
                     key={f.key}
@@ -1828,8 +1904,8 @@ function SalesChannelsView({ user, isMobile }) {
                   />
                 ))}
                 {error && <div style={{ marginBottom: 10, padding: "9px 12px", background: "rgba(255,110,110,0.08)", border: `1px solid ${T.coral}44`, borderRadius: 10, color: T.coral, fontSize: 12 }}>{error}</div>}
-                <button onClick={() => connect(id)} disabled={busy} style={{ background: T.lime, color: "#0A0E17", border: "none", borderRadius: 10, padding: "9px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer", opacity: busy ? 0.7 : 1 }}>
-                  {busy ? "Testing connection…" : "Test & Connect"}
+                <button onClick={() => (def.oauth ? startOAuth(id) : connect(id))} disabled={busy} style={{ background: T.lime, color: "#0A0E17", border: "none", borderRadius: 10, padding: "9px 18px", fontSize: 13, fontWeight: 700, cursor: "pointer", opacity: busy ? 0.7 : 1 }}>
+                  {def.oauth ? (busy ? "Redirecting…" : `Connect with ${def.displayName}`) : (busy ? "Testing connection…" : "Test & Connect")}
                 </button>
               </div>
             )}
@@ -1878,7 +1954,14 @@ function SalesChannelsView({ user, isMobile }) {
         </div>
         {openComingSoon && (
           <div style={{ marginTop: 12, padding: "12px 14px", background: T.panel3, borderRadius: 12, fontSize: 12.5, color: T.sub, lineHeight: 1.6 }}>
-            <strong style={{ color: T.ink }}>{openComingSoon}:</strong> {COMING_SOON_INFO[openComingSoon]}
+            <strong style={{ color: T.ink }}>{openComingSoon}:</strong> {COMING_SOON_INFO[openComingSoon].text}
+            <div style={{ marginTop: 10, display: "flex", flexWrap: "wrap", gap: 14 }}>
+              {COMING_SOON_INFO[openComingSoon].links.map((l) => (
+                <a key={l.url} href={l.url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, color: T.blue, textDecoration: "none", display: "inline-flex", alignItems: "center", gap: 5 }}>
+                  <ExternalLink size={12} /> {l.label}
+                </a>
+              ))}
+            </div>
           </div>
         )}
       </Card>
@@ -2244,6 +2327,22 @@ function SmartSellDashboardApp({ user, signOut }) {
   const [scanSeed, setScanSeed] = useState(null);
   const [savedAnalyses, setSavedAnalyses] = useState([]);
   const [, forceRerenderForRate] = useState(0);
+  const [channelNotice, setChannelNotice] = useState(null);
+
+  // Returning from a marketplace's sign-in page (?mlConnect=success|error).
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const params = new URLSearchParams(window.location.search);
+    const result = params.get("mlConnect");
+    if (!result) return;
+    setView("channels");
+    setChannelNotice(
+      result === "success"
+        ? { ok: true, text: "Mercado Libre connected. You can now load your recent orders." }
+        : { ok: false, text: `Couldn't connect Mercado Libre: ${params.get("reason") || "unknown error"}` }
+    );
+    window.history.replaceState({}, "", window.location.pathname);
+  }, []);
 
   // Fetch the real ZAR -> user-currency rate once per currency. Numbers on
   // screen won't be exactly right until this resolves (briefly shows 1:1),
@@ -2363,7 +2462,7 @@ function SmartSellDashboardApp({ user, signOut }) {
   if (view === "dashboard") content = <Dashboard setView={setView} savedAnalyses={savedAnalyses} loadError={savedLoadError} onRetry={loadSavedAnalyses} isMobile={isMobile} />;
   else if (view === "scan") content = isMobile ? <QuickScanView onAnalyse={handleAnalyse} user={user} initialName={scanSeed} /> : <ScanView onAnalyse={handleAnalyse} user={user} initialName={scanSeed} />;
   else if (view === "marketplace") content = <MarketplaceView user={user} onScanThis={(n) => { setScanSeed(n); setView("scan"); }} isMobile={isMobile} />;
-  else if (view === "channels") content = <SalesChannelsView user={user} isMobile={isMobile} />;
+  else if (view === "channels") content = <SalesChannelsView user={user} isMobile={isMobile} notice={channelNotice} />;
   else if (view === "analysis" && analysis) content = <AnalysisView data={analysis} onBack={() => setView("scan")} onOpenSimulator={openSimulatorFromAnalysis} onSaveToComparison={saveToComparison} isMobile={isMobile} />;
   else if (view === "simulator") content = <SimulatorView seed={simSeed} user={user} isMobile={isMobile} />;
   else if (view === "research") content = <ComparisonView savedAnalyses={savedAnalyses} loadError={savedLoadError} onRetry={loadSavedAnalyses} isMobile={isMobile} />;
