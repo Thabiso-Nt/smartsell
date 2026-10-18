@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { CONNECTORS } from "../_connectors";
+import { encryptCredentials } from "../../../../lib/credentialCrypto";
 
 function supabaseForUser(accessToken) {
   return createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY, {
@@ -16,6 +17,10 @@ export async function POST(request) {
     const connector = CONNECTORS[marketplaceId];
     if (!connector) return Response.json({ error: "Unknown marketplace." }, { status: 400 });
 
+    if (connector.authType === "oauth") {
+      return Response.json({ error: "This marketplace connects through its own sign-in page — use its Connect button." }, { status: 400 });
+    }
+
     const supabase = supabaseForUser(token);
     const { data: userData, error: userErr } = await supabase.auth.getUser();
     if (userErr || !userData?.user) return Response.json({ error: "Not signed in." }, { status: 401 });
@@ -28,7 +33,7 @@ export async function POST(request) {
         user_id: userData.user.id,
         marketplace_id: marketplaceId,
         display_name: connector.displayName,
-        credentials,
+        credentials: encryptCredentials(credentials),
         status: "connected",
         connected_at: new Date().toISOString(),
       },
