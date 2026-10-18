@@ -20,6 +20,59 @@ export const CONNECTORS = {
     },
   },
 
+  mercadolibre: {
+    displayName: "Mercado Libre",
+    authType: "oauth", // connected through the OAuth flow, not a pasted key
+    // Access tokens expire after a few hours. Mercado Libre refresh tokens
+    // are single-use, so the NEW refresh token must be saved — the orders
+    // route does that with whatever this returns.
+    async refreshCredentials(credentials) {
+      const expiresSoon = new Date(credentials.expires_at).getTime() < Date.now() + 60 * 1000;
+      if (!expiresSoon) return null;
+      const res = await fetch("https://api.mercadolibre.com/oauth/token", {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json" },
+        body: new URLSearchParams({
+          grant_type: "refresh_token",
+          client_id: process.env.MERCADOLIBRE_CLIENT_ID,
+          client_secret: process.env.MERCADOLIBRE_CLIENT_SECRET,
+          refresh_token: credentials.refresh_token,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.access_token) {
+        throw new Error(`Mercado Libre session expired — please reconnect. (${data.message || res.status})`);
+      }
+      return {
+        ...credentials,
+        access_token: data.access_token,
+        refresh_token: data.refresh_token || credentials.refresh_token,
+        expires_at: new Date(Date.now() + data.expires_in * 1000).toISOString(),
+      };
+    },
+    // Endpoint based on Mercado Libre's public orders API; not yet verified
+    // against a live seller account. Real errors are shown verbatim in the app.
+    async fetchOrders(credentials) {
+      const res = await fetch(`https://api.mercadolibre.com/orders/search?seller=${credentials.seller_id}&limit=10`, {
+        headers: { Authorization: `Bearer ${credentials.access_token}` },
+      });
+      if (!res.ok) {
+        const body = await res.text();
+        throw new Error(`Mercado Libre error: ${res.status} ${body.slice(0, 200)}`);
+      }
+      const data = await res.json();
+      return (data.results || []).map((o) => ({
+        id: o.id,
+        number: o.id,
+        status: o.status,
+        total: o.total_amount,
+        currency: o.currency_id,
+        date: o.date_created,
+        customer: o.buyer?.nickname || "",
+      }));
+    },
+  },
+
   takealot: {
     displayName: "Takealot",
     // NOTE: Takealot's official API docs block automated access (robots.txt),
